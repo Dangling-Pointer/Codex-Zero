@@ -1,0 +1,21 @@
+Project Hail Mary Licensing Notice
+
+Copyright (c) 2026 Dangling Pointer Project Team
+
+Project-authored source code, build files, tests, documentation, and editable
+asset configuration files are licensed under the GNU General Public License,
+version 3 only. The full license text is in LICENSE.
+
+The following paths are excluded from that GPL grant:
+
+- Protected game assets: assets/audio/, assets/character/, assets/fonts/,
+  assets/preload/, and assets/textures/, plus any future game asset other than
+  assets/configs/ and assets/configs_list.json.
+- Third-party components: thirdparty/.
+
+Protected game assets are governed by assets/LICENSE.md. Third-party components
+remain under their own copyright notices and licenses; see
+THIRD_PARTY_NOTICES.md.
+
+This notice does not replace copyright notices or licenses carried by
+third-party files.
