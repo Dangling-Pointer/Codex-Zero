@@ -2,10 +2,13 @@
 
 #include "../scene/scene_keys.h"
 #include "../scene/main_menu_scene.h"
+#include "../scene/room_scene.h"
+
 
 #include "../../engine/builtin/builtin_scene_keys.h"
 #include "../../engine/builtin/scenes/startup_loading_scene.h"
 #include "../../engine/scene/scene_manager.h"
+
 #if ELYSIA_ENABLE_IMGUI
 #include "../../engine/tools/imgui/imgui_development_overlay.h"
 #endif
@@ -21,16 +24,11 @@ elysia::application::ApplicationDescriptor GameModule::descriptor() const
     elysia::application::ApplicationDescriptor descriptor;
     descriptor.logical_width = 1280;
     descriptor.logical_height = 720;
-    descriptor.presentation.render.texture_filter =
-        elysia::application::ApplicationTextureFilter::Nearest;
-    descriptor.presentation.ui.default_theme =
-        elysia::ui::UiBuiltinTheme::BlueGlassMoon;
-    descriptor.presentation.startup.engine_logo =
-        elysia::application::ApplicationEngineLogoVariant::White;
-    descriptor.presentation.fonts.ui.source =
-        elysia::typography::FontSource::Project;
-    descriptor.presentation.fonts.floating_number.source =
-        elysia::typography::FontSource::Project;
+    descriptor.presentation.render.texture_filter =elysia::application::ApplicationTextureFilter::Nearest;
+    descriptor.presentation.ui.default_theme =elysia::ui::UiBuiltinTheme::BlueGlassMoon;
+    descriptor.presentation.startup.engine_logo =elysia::application::ApplicationEngineLogoVariant::White;
+    descriptor.presentation.fonts.ui.source =elysia::typography::FontSource::Project;
+    descriptor.presentation.fonts.floating_number.source =elysia::typography::FontSource::Project;
     descriptor.initial_route = SceneRoute{
         .target = elysia::builtin::SceneKeys::StartupLoading,
         .payload = StartupLoadingScenePayload{
@@ -40,7 +38,9 @@ elysia::application::ApplicationDescriptor GameModule::descriptor() const
                 .reload_mode = SceneReloadMode::Reuse
             },
             .failure_route = std::nullopt,
-            .project_logo = std::nullopt,
+            .project_logo = elysia::builtin::StartupLogoSlot{
+            .texture_key = "dangling_ptr"
+            },
             .wait_for_confirmation = true
         },
         .reload_mode = SceneReloadMode::Reuse
@@ -52,6 +52,7 @@ elysia::application::ApplicationDescriptor GameModule::descriptor() const
 void GameModule::register_scenes(elysia::scene::SceneManager& scene_manager) const
 {
     scene_manager.register_game_scene<game::scene::MainMenuScene>(game::scene_keys::MainMenu);
+    scene_manager.register_game_scene<game::scene::RoomScene>(game::scene_keys::RoomScene);
 }
 
 std::unique_ptr<elysia::tools::IDevelopmentOverlay>

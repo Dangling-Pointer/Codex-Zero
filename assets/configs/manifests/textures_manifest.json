@@ -1,4 +1,7 @@
 {
   "textures": {
+    "ui.codex_zero": {
+      "path": "ui/codex_zero.png"
+    }
   }
 }
