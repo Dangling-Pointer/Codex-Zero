@@ -1,0 +1,82 @@
+{
+  "common": {
+    "save": "保存",
+    "back": "戻る",
+    "confirm": "確認",
+    "cancel": "キャンセル",
+    "close": "閉じる",
+    "coming_soon": "近日公開"
+  },
+  "menu_scene": {
+    "project_name": "Elysia Engine",
+    "demo_gallery": "デモギャラリー",
+    "settings": "設定",
+    "exit": "終了",
+    "exit_confirm": {
+      "title": "終了の確認",
+      "message": "Elysia Engineを終了しますか？",
+      "cancel": "キャンセル",
+      "close": "X"
+    }
+  },
+  "demo_gallery": {
+    "title": "デモギャラリー",
+    "physics": "物理・戦闘",
+    "animation_preview": "アニメーションプレビュー",
+    "ui_gallery": "UIコンポーネントギャラリー",
+    "engine_features": "エンジン機能ラボ",
+    "elysia_realm": "エリシアレルム",
+    "failure_test": "アプリケーション障害テスト",
+    "back": "戻る",
+    "failure_confirm": {
+      "title": "障害テストの確認",
+      "message": "このテストはアプリケーションを終了します。続行しますか？",
+      "confirm": "障害テストを実行",
+      "cancel": "キャンセル",
+      "close": "閉じる"
+    }
+  },
+  "physics_combat_gallery": {
+    "title": "物理・戦闘デモ",
+    "collider": "コライダー戦闘",
+    "platform_tile": "横スクロールタイル戦闘",
+    "top_down_tile": "見下ろし型タイル戦闘",
+    "back": "戻る"
+  },
+  "animation_preview": {
+    "title": "アニメーションプレビュー",
+    "description": "RyougiShikiのフレームディレクトリと多段攻撃アニメーションを確認します。",
+    "animation_idle": "待機",
+    "animation_run": "走行",
+    "attack_segment": "攻撃段",
+    "attack_previous": "前の段",
+    "attack_replay": "攻撃を再生",
+    "attack_next": "次の段",
+    "back": "戻る"
+  },
+  "ui_component_gallery": {
+    "typography": {
+      "tab": "タイポグラフィ",
+      "title": "フォントサイズ",
+      "description": "エンジン内蔵フォントで、事前読み込み済みの全サイズを表示します。",
+      "sample_10": "10 px — キャプションの例",
+      "sample_20": "20 px — コンパクトテキストの例",
+      "sample_30": "30 px — 標準テキストの例",
+      "sample_40": "40 px — 見出しの例",
+      "sample_50": "50 px — サブタイトルの例",
+      "sample_60": "60 px — ダイアログ見出しの例",
+      "sample_70": "70 px — タイトルの例"
+    },
+    "status": { "ready": "UI ワークベンチの準備完了", "interaction": "操作を受け取りました" },
+    "pages": { "overview": "概要", "controls": "コントロール", "media": "コンテンツとメディア", "containers": "コンテナ", "overlays": "オーバーレイとフォーカス", "appearance": "外観とローカライズ" },
+    "sections": { "overview": "テーマ対応ダッシュボードと視覚ロールの例。", "controls": "操作するとステータス行が更新されます。", "media": "テキスト、数値、バー、エンジン画像、アニメーション。", "containers": "合成、スロット、スクロール、ネストしたタブ。", "overlays": "ウィンドウ管理のオーバーレイ、ダイアログ、フォーカス復元。", "appearance": "組み込みテーマは登録済み UI ツリーを直ちに更新します。" },
+    "actions": { "replay": "再生", "reset": "ワークベンチを再構築" },
+    "controls": { "labeled_check": "ラベル付き塗りつぶしチェックボックス", "labeled_radio": "ラベル付きラジオ項目", "placeholder": "16 文字まで入力" },
+    "media": { "long_text": "このローカライズ済みテキストブロックは、折り返し、文字組み、テーマ対応コンテンツ描画を検証します。" },
+    "containers": { "chrome": "Chrome スロット", "nested_tab": "ネストしたタブ" },
+    "overlays": { "open_overlay": "非モーダルオーバーレイを開く", "open_dialog": "閲覧ダイアログを開く", "open_confirm": "確認ダイアログを開く", "tooltip": "ホバーでツールチップ", "tooltip_text": "ツールチップはフォーカスとポインターの状態に従います。" },
+    "dialog": { "title": "ワークベンチ閲覧ダイアログ", "body": "このダイアログはモーダル配置、フォーカス復元、ローカライズ済み長文を検証します。" },
+    "confirm": { "title": "ワークベンチ操作の確認", "message": "この確認ダイアログはオーバーレイ検証の一部です。" },
+    "appearance": { "note": "テーマ名は安定したエンジン識別子です。" }
+  }
+}

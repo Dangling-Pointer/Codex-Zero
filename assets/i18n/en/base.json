@@ -1,0 +1,23 @@
+{
+  "common": {
+    "save": "Save",
+    "back": "Back",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "close": "Close",
+    "coming_soon": "Coming soon"
+  },
+  "menu_scene": {
+    "project_name": "Geometry something",
+    "start": "Start",
+    "settings": "Settings",
+    "about":"About",
+    "exit": "Exit",
+    "exit_confirm": {
+      "title": "Confirm Exit",
+      "message": "Exit Elysia Engine?",
+      "cancel": "Cancel",
+      "close": "X"
+    }
+  }
+}

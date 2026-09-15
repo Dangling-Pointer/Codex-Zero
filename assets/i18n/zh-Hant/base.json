@@ -1,0 +1,82 @@
+{
+  "common": {
+    "save": "儲存",
+    "back": "返回",
+    "confirm": "確認",
+    "cancel": "取消",
+    "close": "關閉",
+    "coming_soon": "即將推出"
+  },
+  "menu_scene": {
+    "project_name": "Elysia Engine",
+    "demo_gallery": "展示庫",
+    "settings": "設定",
+    "exit": "結束",
+    "exit_confirm": {
+      "title": "確認結束",
+      "message": "要結束 Elysia Engine 嗎？",
+      "cancel": "取消",
+      "close": "X"
+    }
+  },
+  "demo_gallery": {
+    "title": "展示庫",
+    "physics": "物理與戰鬥",
+    "animation_preview": "動畫預覽",
+    "ui_gallery": "UI 元件庫",
+    "engine_features": "引擎功能實驗室",
+    "elysia_realm": "愛莉希雅領域",
+    "failure_test": "應用程式故障測試",
+    "back": "返回",
+    "failure_confirm": {
+      "title": "確認故障測試",
+      "message": "此測試會終止應用程式。是否繼續？",
+      "confirm": "執行故障測試",
+      "cancel": "取消",
+      "close": "關閉"
+    }
+  },
+  "physics_combat_gallery": {
+    "title": "物理與戰鬥展示",
+    "collider": "碰撞體戰鬥",
+    "platform_tile": "橫向 Tile 戰鬥",
+    "top_down_tile": "俯視 Tile 戰鬥",
+    "back": "返回"
+  },
+  "animation_preview": {
+    "title": "動畫預覽",
+    "description": "預覽 RyougiShiki 的目錄影格動畫和多段攻擊動畫。",
+    "animation_idle": "待機",
+    "animation_run": "奔跑",
+    "attack_segment": "攻擊段",
+    "attack_previous": "上一段",
+    "attack_replay": "重播攻擊",
+    "attack_next": "下一段",
+    "back": "返回"
+  },
+  "ui_component_gallery": {
+    "typography": {
+      "tab": "字體排版",
+      "title": "字體字號",
+      "description": "使用引擎內建字體展示所有預載字號。",
+      "sample_10": "10 px — 說明文字範例",
+      "sample_20": "20 px — 精簡文字範例",
+      "sample_30": "30 px — 標準文字範例",
+      "sample_40": "40 px — 標題文字範例",
+      "sample_50": "50 px — 副標題文字範例",
+      "sample_60": "60 px — 對話框標題範例",
+      "sample_70": "70 px — 主標題文字範例"
+    },
+    "status": { "ready": "UI 工作台已就緒", "interaction": "已收到互動" },
+    "pages": { "overview": "總覽", "controls": "控制項", "media": "內容與媒體", "containers": "容器", "overlays": "覆蓋層與焦點", "appearance": "外觀與本地化" },
+    "sections": { "overview": "主題感知儀表板與視覺角色範例。", "controls": "互動控制項會更新狀態列。", "media": "文字、數字、進度列、引擎圖片與動畫。", "containers": "組合、插槽、捲動與巢狀標籤頁。", "overlays": "視窗管理的覆蓋層、對話框與焦點恢復。", "appearance": "內建主題會立即更新已註冊的 UI 樹。" },
+    "actions": { "replay": "重播", "reset": "重建工作台" },
+    "controls": { "labeled_check": "填滿式標籤核取方塊", "labeled_radio": "標籤單選項", "placeholder": "最多輸入十六個字元" },
+    "media": { "long_text": "此本地化文字區塊用於驗證換行、字體排版和主題化內容繪製。" },
+    "containers": { "chrome": "Chrome 插槽", "nested_tab": "巢狀標籤頁" },
+    "overlays": { "open_overlay": "開啟非強制回應覆蓋層", "open_dialog": "開啟閱讀對話框", "open_confirm": "開啟確認對話框", "tooltip": "停留以檢視提示", "tooltip_text": "提示內容會跟隨焦點和指標狀態。" },
+    "dialog": { "title": "工作台閱讀對話框", "body": "此對話框用於驗證強制回應位置、焦點恢復與本地化長文案。" },
+    "confirm": { "title": "確認工作台操作", "message": "此確認對話框是覆蓋層測試的一部分。" },
+    "appearance": { "note": "主題名稱是穩定的引擎識別碼。" }
+  }
+}

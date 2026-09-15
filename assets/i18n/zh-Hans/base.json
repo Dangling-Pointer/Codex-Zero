@@ -1,0 +1,89 @@
+{
+  "common": {
+    "save": "保存",
+    "back": "返回",
+    "confirm": "确认",
+    "cancel": "取消",
+    "close": "关闭",
+    "coming_soon": "即将推出"
+  },
+  "menu_scene": {
+    "project_name": "Elysia Engine",
+    "demo_gallery": "演示库",
+    "settings": "设置",
+    "exit": "退出",
+    "exit_confirm": {
+      "title": "确认退出",
+      "message": "要退出 Elysia Engine 吗？",
+      "cancel": "取消",
+      "close": "X"
+    }
+  },
+  "demo_gallery": {
+    "title": "演示库",
+    "physics": "物理与战斗",
+    "animation_preview": "动画预览",
+    "ui_gallery": "UI 组件库",
+    "engine_features": "引擎功能实验室",
+    "elysia_realm": "爱莉希雅领域",
+    "failure_test": "应用故障测试",
+    "back": "返回",
+    "failure_confirm": {
+      "title": "确认故障测试",
+      "message": "该测试会终止应用程序。是否继续？",
+      "confirm": "运行故障测试",
+      "cancel": "取消",
+      "close": "关闭"
+    }
+  },
+  "physics_combat_gallery": {
+    "title": "物理与战斗演示",
+    "collider": "碰撞体战斗",
+    "platform_tile": "横版 Tile 战斗",
+    "top_down_tile": "俯视 Tile 战斗",
+    "back": "返回"
+  },
+  "animation_preview": {
+    "title": "动画预览",
+    "description": "预览 RyougiShiki 的目录帧动画和多段攻击动画。",
+    "animation_idle": "待机",
+    "animation_run": "奔跑",
+    "attack_segment": "攻击段",
+    "attack_previous": "上一段",
+    "attack_replay": "重播攻击",
+    "attack_next": "下一段",
+    "back": "返回"
+  },
+  "ui_component_gallery": {
+    "typography": {
+      "tab": "字体排版",
+      "title": "字体字号",
+      "description": "使用引擎内置字体展示所有预加载字号。",
+      "sample_10": "10 px — 说明文字示例",
+      "sample_20": "20 px — 紧凑文字示例",
+      "sample_30": "30 px — 标准文字示例",
+      "sample_40": "40 px — 标题文字示例",
+      "sample_50": "50 px — 副标题文字示例",
+      "sample_60": "60 px — 对话框标题示例",
+      "sample_70": "70 px — 主标题文字示例"
+    },
+    "status": { "ready": "UI 工作台已就绪", "interaction": "已收到交互" },
+    "pages": { "overview": "概览", "controls": "控件", "media": "内容与媒体", "containers": "容器", "overlays": "弹层与焦点", "appearance": "外观与本地化" },
+    "sections": {
+      "overview": "主题感知仪表板与视觉角色示例。",
+      "controls": "交互控件会更新状态栏。",
+      "media": "文本、数字、进度条、引擎图片与动画。",
+      "containers": "组合、插槽、滚动与嵌套标签页。",
+      "overlays": "窗口管理的弹层、对话框与焦点恢复。",
+      "appearance": "内建主题会立即更新已注册的 UI 树。"
+    },
+    "actions": { "replay": "重播", "reset": "重建工作台" },
+    "controls": { "labeled_check": "填充式带标签复选框", "labeled_radio": "带标签单选项", "placeholder": "最多输入十六个字符" },
+    "media": { "long_text": "此本地化文本块用于验证换行、字体排版和主题化内容渲染。" },
+    "containers": { "chrome": "Chrome 插槽", "nested_tab": "嵌套标签页" },
+    "overlays": { "open_overlay": "打开非模态弹层", "open_dialog": "打开阅读对话框", "open_confirm": "打开确认对话框", "tooltip": "悬停查看提示", "tooltip_text": "提示内容会跟随焦点和指针状态。" },
+    "dialog": { "title": "工作台阅读对话框", "body": "此对话框用于验证模态位置、焦点恢复和本地化长文案。" },
+    "confirm": { "title": "确认工作台操作", "message": "此确认对话框属于弹层覆盖的一部分。" },
+    "appearance": { "note": "主题名称是稳定的引擎标识。" }
+  }
+}

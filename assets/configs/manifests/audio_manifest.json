@@ -1,0 +1,11 @@
+{
+  "sounds": {
+    "system.button_click_down": {
+      "path": "system/button_click_down.wav"
+    },
+    "system.button_click_up": {
+      "path": "system/button_click_up.wav"
+    }
+  },
+  "music": {}
+}

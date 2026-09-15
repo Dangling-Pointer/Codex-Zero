@@ -1,0 +1,17 @@
+#include "../geometry/vector2.h"
+
+namespace elysia::core
+{
+class Movable
+{
+public:
+    virtual ~Movable() = default;
+
+    virtual void move_by(const Vector2& offset) noexcept = 0;
+};
+
+/*void move_by(const Vector2& offset) noexcept
+{
+    _world_rect.set_position(_world_rect.position() + offset);
+}*/
+}
