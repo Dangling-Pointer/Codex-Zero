@@ -3,9 +3,7 @@
   "languages": [
     "en",
     "ja",
-    "ko",
-    "zh-Hans",
-    "zh-Hant"
+    "zh-Hans"
   ],
   "file": [
     "base.json"
