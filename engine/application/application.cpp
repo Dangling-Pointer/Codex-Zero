@@ -3,6 +3,8 @@
 
 #include "composition/application_scene_composition.h"
 #include "lifecycle/application_event_boundary.h"
+#include "lifecycle/frame_pacing.h"
+#include "lifecycle/shutdown_boundary.h"
 #include "lifecycle/application_exit_policy.h"
 #include "lifecycle/application_termination_logging.h"
 #include "presentation/application_sdl_presentation.h"
@@ -26,7 +28,6 @@
 #include <cstdint>
 #include <exception>
 #include <filesystem>
-#include <limits>
 #include <utility>
 
 #include <SDL3_image/SDL_image.h>
@@ -35,33 +36,6 @@
 
 namespace elysia::application
 {
-namespace
-{
-[[nodiscard]] std::uint32_t calculate_frame_delay_milliseconds(
-    double target_fps,
-    double elapsed_seconds) noexcept
-{
-    if (!std::isfinite(target_fps) || target_fps <= 0.0
-        || !std::isfinite(elapsed_seconds) || elapsed_seconds < 0.0)
-    {
-        return 0;
-    }
-
-    const double remaining_seconds = 1.0 / target_fps - elapsed_seconds;
-    if (remaining_seconds <= 0.0)
-        return 0;
-
-    const double delay_milliseconds =
-        std::ceil(remaining_seconds * 1000.0);
-    constexpr auto maximum_delay =
-        std::numeric_limits<std::uint32_t>::max();
-    if (delay_milliseconds >= static_cast<double>(maximum_delay))
-        return maximum_delay;
-
-    return static_cast<std::uint32_t>(delay_milliseconds);
-}
-}
-
 Application::~Application()
 {
     shutdown();
@@ -167,6 +141,7 @@ bool Application::initialize(
     _active = true;
     _normal_exit_requested = false;
     _has_shutdown = false;
+    _shutdown_succeeded = true;
 
     elysia::tools::TerminationManager::instance()->initialize_lifecycle();
 
@@ -520,25 +495,32 @@ ApplicationRunResult Application::run()
         last_frame_start = frame_start;
         elysia::core::Time::instance()->begin_frame(delta);
 
-#if ELYSIA_ENABLE_IMGUI
-        _input_system.set_development_input_capture(
-            _development_overlay_host.captured_input());
-#endif
-        _input_system.begin_frame();
-        while (SDL_PollEvent(&_event))
+        if (!run_event_boundary("events",[this]()
         {
-            bool development_event_consumed = false;
 #if ELYSIA_ENABLE_IMGUI
-            development_event_consumed =
-                _development_overlay_host.process_event(_event);
+            _input_system.set_development_input_capture(
+                _development_overlay_host.captured_input());
 #endif
-            if (!development_event_consumed)
-                _input_system.process_event(_event);
-            if (_event.type == SDL_EVENT_QUIT)
-                _normal_exit_requested = true;
-        }
+            _input_system.begin_frame();
+            while (SDL_PollEvent(&_event))
+            {
+                bool development_event_consumed = false;
+#if ELYSIA_ENABLE_IMGUI
+                development_event_consumed =
+                    _development_overlay_host.process_event(_event);
+#endif
+                if (!development_event_consumed)
+                    _input_system.process_event(_event);
+                if (_event.type == SDL_EVENT_QUIT)
+                    _normal_exit_requested = true;
+            }
 
-        _input_system.end_frame();
+            _input_system.end_frame();
+        }))
+        {
+            stop_after_boundary_failure();
+            break;
+        }
         if (resolve_exit())
             break;
 
@@ -590,52 +572,64 @@ ApplicationRunResult Application::run()
         if (resolve_exit())
             break;
 
-        const std::uint64_t frame_end = SDL_GetPerformanceCounter();
-        const double elapsed_seconds =
-            static_cast<double>(frame_end - frame_start) / counter_freq;
-        const std::uint32_t delay_milliseconds =
-            calculate_frame_delay_milliseconds(_target_fps,elapsed_seconds);
-        if (delay_milliseconds > 0)
-            SDL_Delay(delay_milliseconds);
+        detail::wait_for_frame(_target_fps,
+            [&] { return static_cast<double>(SDL_GetPerformanceCounter() - frame_start) / counter_freq; },
+            [this]
+            {
+                SDL_PumpEvents();
+                return _normal_exit_requested || SDL_HasEvent(SDL_EVENT_QUIT)
+                    || elysia::tools::TerminationManager::instance()->termination_requested();
+            },
+            [](std::uint64_t ns,bool precise)
+            {
+                if (precise) SDL_DelayPrecise(ns);
+                else SDL_DelayNS(ns);
+            });
     }
 
-    shutdown();
+    if (!shutdown())
+        run_result = ApplicationRunResult::FaultExit;
     return run_result;
 }
 
-void Application::shutdown()
+bool Application::shutdown() noexcept
 {
     if (_has_shutdown)
-        return;
+        return _shutdown_succeeded;
 
     _has_shutdown = true;
     _active = false;
 
-    _input_system.shutdown();
-    _input_system.set_renderer(nullptr);
-    _scene_manager.detach(this);
-    _scene_manager.shutdown();
+    auto cleanup = [this](const char* phase,auto&& action)
+    {
+        if (!run_shutdown_boundary(phase,action))
+            _shutdown_succeeded = false;
+    };
+    cleanup("application_shutdown",[&] { _input_system.shutdown(); });
+    cleanup("application_shutdown",[&] { _input_system.set_renderer(nullptr); });
+    cleanup("application_shutdown",[&] { _scene_manager.detach(this); });
+    if (!_scene_manager.shutdown())
+        _shutdown_succeeded = false;
 #if ELYSIA_ENABLE_IMGUI
-    _development_overlay_host.shutdown();
+    cleanup("application_shutdown",[&] { _development_overlay_host.shutdown(); });
 #endif
-    _scene_runtime_context.reset();
-    ELYSIA_SAVE->shutdown();
+    cleanup("application_shutdown",[&] { _scene_runtime_context.reset(); });
+    cleanup("application_shutdown",[&] { ELYSIA_SAVE->shutdown(); });
 
-    elysia::localization::LocalizationManager::instance()->shutdown();
-    elysia::bootstrap::Bootstrapper::instance()->release_preload_textures();
-    _font_resolver.deactivate_project_fonts();
-    elysia::effects::EffectManager::instance()->set_runtime_dependencies(nullptr,nullptr);
-    elysia::audio::AudioService::instance()->shutdown();
-    elysia::loading::clear_loaded_content();
-    _font_resolver.shutdown();
-    elysia::builtin::BuiltinResources::instance()->shutdown();
+    cleanup("application_shutdown",[&] { elysia::localization::LocalizationManager::instance()->shutdown(); });
+    cleanup("application_shutdown",[&] { elysia::bootstrap::Bootstrapper::instance()->release_preload_textures(); });
+    cleanup("application_shutdown",[&] { _font_resolver.deactivate_project_fonts(); });
+    cleanup("application_shutdown",[&] { elysia::effects::EffectManager::instance()->set_runtime_dependencies(nullptr,nullptr); });
+    cleanup("application_shutdown",[&] { elysia::audio::AudioService::instance()->shutdown(); });
+    cleanup("application_shutdown",[&] { elysia::loading::clear_loaded_content(); });
+    cleanup("application_shutdown",[&] { _font_resolver.shutdown(); });
+    cleanup("application_shutdown",[&] { elysia::builtin::BuiltinResources::instance()->shutdown(); });
     if (_user_config_handler_registered)
     {
-        elysia::config::UserConfigService::instance()
-            ->unregister_user_config_change_handler(*this);
+        cleanup("config_shutdown",[&] { elysia::config::UserConfigService::instance()->unregister_user_config_change_handler(*this); });
         _user_config_handler_registered = false;
     }
-    elysia::config::UserConfigService::instance()->shutdown();
+    cleanup("application_shutdown",[&] { elysia::config::UserConfigService::instance()->shutdown(); });
 
     SDL_DestroyRenderer(_renderer);
     _renderer = nullptr;
@@ -649,7 +643,7 @@ void Application::shutdown()
     }
     if (_mixer_initialized)
     {
-        elysia::audio::detail::mixer_backend().shutdown();
+        cleanup("application_shutdown",[&] { elysia::audio::detail::mixer_backend().shutdown(); });
         MIX_Quit();
         _mixer_initialized = false;
     }
@@ -661,6 +655,7 @@ void Application::shutdown()
 
     ELYSIA_LOG("application","Application shutdown complete");
     elysia::tools::Logger::instance()->shutdown();
+    return _shutdown_succeeded;
 }
 
 void Application::on_scene_manager_quit_requested()

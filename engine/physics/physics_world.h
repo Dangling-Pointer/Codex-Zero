@@ -45,6 +45,8 @@ class PhysicsWorld final : public ICollisionQueryService
     std::optional<BodyState> body_state(PhysicsObjectHandle) const noexcept;
     std::optional<PhysicsPose> render_pose(PhysicsObjectHandle) const noexcept;
     bool set_velocity(PhysicsObjectHandle, elysia::core::Vector2);
+    bool set_velocity_x(PhysicsObjectHandle, float);
+    bool set_velocity_y(PhysicsObjectHandle, float);
     bool set_angular_velocity(PhysicsObjectHandle, float);
     bool set_gravity_scale(PhysicsObjectHandle, float);
     bool set_body_enabled(PhysicsObjectHandle, bool);

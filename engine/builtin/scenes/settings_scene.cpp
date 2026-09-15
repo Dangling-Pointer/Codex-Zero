@@ -48,11 +48,16 @@ elysia::ui::SettingsPanelDraft make_draft(const elysia::config::UserConfigData& 
     };
 }
 
-elysia::ui::SettingsPanelOptions make_panel_options(const elysia::config::UserConfigData& settings)
+elysia::ui::SettingsPanelOptions make_panel_options(
+    const elysia::config::UserConfigData& settings, SDL_Renderer* renderer)
 {
+    SDL_Window* window = renderer ? SDL_GetRenderWindow(renderer) : nullptr;
+    SDL_DisplayID display = window ? SDL_GetDisplayForWindow(window) : SDL_GetPrimaryDisplay();
+    if (!display)
+        display = SDL_GetPrimaryDisplay();
     SDL_Rect usable_bounds{};
     std::optional<elysia::ui::SettingsWindowSize> usable_size;
-    if (SDL_GetDisplayUsableBounds(0,&usable_bounds))
+    if (display && SDL_GetDisplayUsableBounds(display,&usable_bounds))
     {
         usable_size = {
             usable_bounds.w,
@@ -73,7 +78,8 @@ elysia::ui::SettingsPanelOptions make_panel_options(const elysia::config::UserCo
         .target_fps_values =
             elysia::ui::make_settings_target_fps_options(
                 settings.target_fps),
-        .languages = supported_languages
+        .languages = supported_languages,
+        .usable_window_size = usable_size
     };
 }
 
@@ -180,7 +186,8 @@ void SettingsScene::restore_ui_state()
         return;
 
     _settings_panel->set_draft(make_draft(_baseline_state.settings));
-    _settings_panel->set_options(make_panel_options(_baseline_state.settings));
+    _settings_panel->set_options(make_panel_options(
+        _baseline_state.settings, runtime_context().renderer()));
     _settings_panel->reset_navigation_state();
     if (_baseline_state.restart_required)
     {

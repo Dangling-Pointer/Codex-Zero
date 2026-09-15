@@ -64,7 +64,7 @@ private:
     bool enter_initial_scene(
         const IGameModule& game_module,
         const ApplicationDescriptor& descriptor);
-    void shutdown();
+    bool shutdown() noexcept;
 
     void on_scene_manager_quit_requested() override;
 
@@ -99,6 +99,7 @@ private:
     bool _active = true;
     bool _normal_exit_requested = false;
     bool _has_shutdown = false;
+    bool _shutdown_succeeded = true;
     bool _user_config_handler_registered = false;
     bool _sdl_initialized = false;
     bool _mixer_initialized = false;

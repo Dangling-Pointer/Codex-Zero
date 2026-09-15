@@ -109,6 +109,12 @@ void PhysicsWorld::Impl::retire(Shape &s)
         s.native = b2_nullShapeId;
     }
 }
+bool PhysicsWorld::Impl::bullet(const Object &o) const
+{
+    return o.definition.bullet || std::ranges::any_of(o.shapes, [&](ColliderId id) {
+        return shapes.at(id).definition.detection_mode == CollisionDetectionMode::Continuous;
+    });
+}
 void PhysicsWorld::Impl::mass(Object &o)
 {
     if (o.definition.type != BodyType::Dynamic)
@@ -265,10 +271,7 @@ PhysicsObjectHandle PhysicsWorld::register_object(elysia::core::GameObject &owne
         d.fixedRotation = o.definition.fixed_rotation;
         d.enableSleep = o.definition.enable_sleep;
         d.isEnabled = o.definition.enabled && o.owner->is_active();
-        d.isBullet = o.definition.bullet;
-        for (auto id : o.shapes)
-            if (p.shapes.at(id).definition.detection_mode == CollisionDetectionMode::Continuous)
-                d.isBullet = true;
+        d.isBullet = p.bullet(o);
         o.native = b2CreateBody(p.world, &d);
         for (auto id : o.shapes)
             p.create_shape(p.shapes.at(id), o.native);
@@ -364,6 +367,36 @@ bool PhysicsWorld::set_velocity(PhysicsObjectHandle h, elysia::core::Vector2 v)
         auto *o = p.raw(h);
         if (o)
             b2Body_SetLinearVelocity(o->native, p.to(v));
+    });
+    return true;
+}
+bool PhysicsWorld::set_velocity_x(PhysicsObjectHandle h, float v)
+{
+    auto &p = *_impl;
+    if (!p.get(h) || !std::isfinite(v))
+        return false;
+    p.enqueue([&p, h, v] {
+        if (auto *o = p.raw(h))
+        {
+            auto velocity = b2Body_GetLinearVelocity(o->native);
+            velocity.x = p.units.to_length(v);
+            b2Body_SetLinearVelocity(o->native, velocity);
+        }
+    });
+    return true;
+}
+bool PhysicsWorld::set_velocity_y(PhysicsObjectHandle h, float v)
+{
+    auto &p = *_impl;
+    if (!p.get(h) || !std::isfinite(v))
+        return false;
+    p.enqueue([&p, h, v] {
+        if (auto *o = p.raw(h))
+        {
+            auto velocity = b2Body_GetLinearVelocity(o->native);
+            velocity.y = p.units.to_length(v);
+            b2Body_SetLinearVelocity(o->native, velocity);
+        }
     });
     return true;
 }
@@ -479,8 +512,28 @@ bool PhysicsWorld::apply_angular_impulse(PhysicsObjectHandle h, float f)
 bool PhysicsWorld::teleport_object(PhysicsObjectHandle h, elysia::core::Vector2 pos,
                                    TeleportVelocityMode mode)
 {
-    auto *o = _impl->get(h);
-    return o && set_transform(h, {pos, o->current.angle}, mode);
+    auto &p = *_impl;
+    if (!p.get(h) || !finite(pos))
+        return false;
+    p.enqueue([&p, h, pos, mode] {
+        if (auto *o = p.raw(h))
+            p.transform(*o, {pos, o->current.angle}, mode);
+    });
+    return true;
+}
+void PhysicsWorld::Impl::transform(Object &o, PhysicsPose pose, TeleportVelocityMode mode)
+{
+    for (auto id : o.shapes)
+        cache.invalidate_target(CollisionTarget::from_collider(id));
+    b2Body_SetTransform(o.native, to(pose.position), b2MakeRot(pose.angle));
+    b2Body_SetAwake(o.native, true);
+    o.previous = o.current = pose;
+    o.owner->set_position(pose.position);
+    if (mode == TeleportVelocityMode::Clear)
+    {
+        b2Body_SetLinearVelocity(o.native, b2Vec2_zero);
+        b2Body_SetAngularVelocity(o.native, 0);
+    }
 }
 bool PhysicsWorld::set_transform(PhysicsObjectHandle h, PhysicsPose pose, TeleportVelocityMode mode)
 {
@@ -489,19 +542,7 @@ bool PhysicsWorld::set_transform(PhysicsObjectHandle h, PhysicsPose pose, Telepo
         return false;
     p.enqueue([&p, h, pose, mode] {
         if (auto *o = p.raw(h))
-        {
-            for (auto id : o->shapes)
-                p.cache.invalidate_target(CollisionTarget::from_collider(id));
-            b2Body_SetTransform(o->native, p.to(pose.position), b2MakeRot(pose.angle));
-            b2Body_SetAwake(o->native, true);
-            o->previous = o->current = pose;
-            o->owner->set_position(pose.position);
-            if (mode == TeleportVelocityMode::Clear)
-            {
-                b2Body_SetLinearVelocity(o->native, b2Vec2_zero);
-                b2Body_SetAngularVelocity(o->native, 0);
-            }
-        }
+            p.transform(*o, pose, mode);
     });
     return true;
 }
@@ -523,6 +564,7 @@ bool PhysicsWorld::update_collider(ColliderId id, const Collider &c)
         {
             p.create_shape(s, o->native);
             p.mass(*o);
+            b2Body_SetBullet(o->native, p.bullet(*o));
         }
     });
     return true;

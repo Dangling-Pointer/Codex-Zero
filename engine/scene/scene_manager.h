@@ -58,7 +58,8 @@ public:
         return _current_scene_key;
     }
 
-    void shutdown();
+    // Completes cleanup even if on_exit throws; repeated calls retain the result.
+    bool shutdown() noexcept;
 
 private:
     using SceneProvider = std::function<Scene*(SceneReloadMode reload_mode)>;
@@ -81,6 +82,8 @@ private:
     [[noreturn]] static void throw_invalid_route_key(SceneKey key);
 
 private:
+    bool _has_shutdown = false;
+    bool _shutdown_succeeded = true;
     Scene* _current_scene = nullptr;
     SceneKey _current_scene_key = SceneKeys::Invalid;
 
@@ -168,6 +171,8 @@ void SceneManager::add_scene_provider(SceneKey scene_key, Args&&... args)
                 constructor_args);
         }
     );
+    _has_shutdown = false;
+    _shutdown_succeeded = true;
 }
 
 }

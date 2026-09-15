@@ -6,6 +6,7 @@
 #include "../object_query/runtime/game_object_query_manager.h"
 #include "../tools/debug_draw.h"
 #include "../tools/logger.h"
+#include "../application/lifecycle/shutdown_boundary.h"
 
 #include <stdexcept>
 
@@ -18,6 +19,8 @@ SceneManager::~SceneManager()
 
 void SceneManager::set_runtime_context(const SceneRuntimeContext& context) noexcept
 {
+    _has_shutdown = false;
+    _shutdown_succeeded = true;
     _runtime_context = &context;
 
     auto* camera_manager = elysia::camera::CameraManager::instance();
@@ -262,31 +265,35 @@ void SceneManager::detach_from_scene(Scene* scene)
 	scene->detach(this);
 }
 
-void SceneManager::shutdown()
+bool SceneManager::shutdown() noexcept
 {
-    if (_current_scene)
+    if (_has_shutdown)
+        return _shutdown_succeeded;
+    _has_shutdown = true;
+    auto cleanup = [this](auto&& action)
     {
-        detach_from_scene(_current_scene);
-        _current_scene->on_exit();
-
-        _current_scene = nullptr;
-        _current_scene_key = SceneKeys::Invalid;
+        if (!elysia::application::run_shutdown_boundary("scene_shutdown",action))
+            _shutdown_succeeded = false;
+    };
+    Scene* exiting = std::exchange(_current_scene,nullptr);
+    _current_scene_key = SceneKeys::Invalid;
+    if (exiting)
+    {
+        cleanup([&] { detach_from_scene(exiting); });
+        cleanup([&] { exiting->on_exit(); });
     }
-
-    elysia::tools::DebugDraw::instance()->clear();
-
-    elysia::camera::CameraManager::instance()->reset(
-        elysia::camera::CameraSlot::Main
-    );
-
-    _scene_factory.clear_runtime_contexts();
-    _scene_factory.destroy_all_scene();
+    cleanup([] { elysia::tools::DebugDraw::instance()->clear(); });
+    cleanup([] { elysia::camera::CameraManager::instance()->reset(
+        elysia::camera::CameraSlot::Main); });
+    cleanup([&] { _scene_factory.clear_runtime_contexts(); });
+    cleanup([&] { _scene_factory.destroy_all_scene(); });
     _scene_providers.clear();
     _runtime_context = nullptr;
 
     _pending_request = SceneRequest{};
     _has_pending_request = false;
     _is_processing_request = false;
+    return _shutdown_succeeded;
 }
 
 }

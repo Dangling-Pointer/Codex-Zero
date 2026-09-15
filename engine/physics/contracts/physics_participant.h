@@ -47,15 +47,13 @@ class PhysicsParticipant
     }
     void set_velocity_x(float x)
     {
-        auto v = velocity();
-        v.x = x;
-        set_velocity(v);
+        if (_world)
+            _world->set_velocity_x(_handle, x);
     }
     void set_velocity_y(float y)
     {
-        auto v = velocity();
-        v.y = y;
-        set_velocity(v);
+        if (_world)
+            _world->set_velocity_y(_handle, y);
     }
     void update_physics_collider(std::size_t i, const Collider &c)
     {

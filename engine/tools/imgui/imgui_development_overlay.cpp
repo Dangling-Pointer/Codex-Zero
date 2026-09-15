@@ -22,6 +22,7 @@ struct SdlRendererState
     int logical_height = 0;
     SDL_RendererLogicalPresentation presentation = SDL_LOGICAL_PRESENTATION_DISABLED;
     SDL_Rect viewport{};
+    bool viewport_enabled = false;
     SDL_Rect clip{};
     bool clip_enabled = false;
     float scale_x = 1.0f;
@@ -40,6 +41,7 @@ struct SdlRendererState
     state.target = SDL_GetRenderTarget(&renderer);
     SDL_GetRenderLogicalPresentation(&renderer,&state.logical_width,&state.logical_height,&state.presentation);
     SDL_GetRenderViewport(&renderer, &state.viewport);
+    state.viewport_enabled = SDL_RenderViewportSet(&renderer);
     state.clip_enabled = SDL_RenderClipEnabled(&renderer) == true;
     if (state.clip_enabled)
         SDL_GetRenderClipRect(&renderer, &state.clip);
@@ -61,7 +63,7 @@ void restore_renderer_state(
     (void)SDL_SetRenderTarget(&renderer, state.target);
     (void)SDL_SetRenderLogicalPresentation(&renderer, state.logical_width, state.logical_height, state.presentation);
     (void)SDL_SetRenderScale(&renderer, state.scale_x, state.scale_y);
-    SDL_SetRenderViewport(&renderer, &state.viewport);
+    SDL_SetRenderViewport(&renderer, state.viewport_enabled ? &state.viewport : nullptr);
     if (state.clip_enabled)
         SDL_SetRenderClipRect(&renderer, &state.clip);
     else
@@ -185,6 +187,10 @@ void ImGuiDevelopmentOverlay::render(SDL_Renderer& renderer)
     }
 
     const SdlRendererState renderer_state = capture_renderer_state(renderer);
+    // ImGui uses window coordinates and applies its own framebuffer scale.
+    // Game logical presentation would scale and letterbox the overlay a second time.
+    (void)SDL_SetRenderLogicalPresentation(&renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
+    (void)SDL_SetRenderScale(&renderer, 1.0f, 1.0f);
     ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), &renderer);
     restore_renderer_state(renderer, renderer_state);
     _frame_started = false;

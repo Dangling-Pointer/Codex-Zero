@@ -185,7 +185,11 @@ std::vector<SettingsWindowSize> make_settings_window_size_options(
                 && preset.height <= usable_size->height))
             result.push_back(preset);
     }
-    result.push_back(current_size);
+    if (!usable_size || (current_size.width <= usable_size->width
+            && current_size.height <= usable_size->height))
+        result.push_back(current_size);
+    if (result.empty() && usable_size)
+        result.push_back(*usable_size);
     return normalized_window_sizes(std::move(result));
 }
 
@@ -272,6 +276,21 @@ void SettingsPanel::set_options(SettingsPanelOptions options)
     }
 
     _options = std::move(options);
+    if (_options.usable_window_size
+        && _options.usable_window_size->width > 0
+        && _options.usable_window_size->height > 0)
+    {
+        const auto limit = *_options.usable_window_size;
+        std::erase_if(_options.window_sizes, [limit](const auto& size)
+        {
+            return size.width > limit.width || size.height > limit.height;
+        });
+        if (_options.window_sizes.empty())
+            _options.window_sizes.push_back(limit);
+        // Keep hidden settings intact; visible window choices must match the draft.
+        if (_visibility.window_mode && find_window_size_index(_draft.window_size) == kNotFound)
+            _draft.window_size = _options.window_sizes.back();
+    }
     rebuild_window_options();
     rebuild_target_fps_options();
     rebuild_language_options();

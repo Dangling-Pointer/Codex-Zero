@@ -109,6 +109,8 @@ struct PhysicsWorld::Impl
     void create_shape(Shape &, b2BodyId);
     void retire(Shape &);
     void mass(Object &);
+    bool bullet(const Object &) const;
+    void transform(Object &, PhysicsPose, TeleportVelocityMode);
     void destroy_object(std::uint64_t);
     void build_tiles(TileCoordinate, TileCoordinate);
     void clear_tiles();

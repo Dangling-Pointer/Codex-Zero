@@ -51,6 +51,8 @@ struct SettingsPanelOptions
     std::vector<SettingsWindowSize> window_sizes;
     std::vector<double> target_fps_values;
     std::vector<std::string> languages;
+    // Window-coordinate work area of the host display, when available.
+    std::optional<SettingsWindowSize> usable_window_size;
 };
 
 struct SettingsPanelVisibility
