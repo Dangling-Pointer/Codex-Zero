@@ -118,6 +118,7 @@ protected:
     [[nodiscard]] elysia::physics::PhysicsWorld& physics_world() noexcept;
     [[nodiscard]] const elysia::physics::PhysicsWorld& physics_world() const noexcept;
     virtual void on_scene_object_registered(elysia::core::SceneObject& object);
+    [[nodiscard]] virtual std::optional<elysia::camera::CameraFocus> resolve_camera_focus() const;
     [[nodiscard]] virtual std::optional<elysia::core::Rect> resolve_camera_focus_rect() const;
 
 protected:

@@ -15,6 +15,7 @@ public:
     explicit CameraController(Camera& camera) noexcept;
 
     void set_follow_strategy(std::unique_ptr<IFollowStrategy> follow_strategy) noexcept;
+    void set_focus(std::optional<CameraFocus> focus) noexcept;
     void set_focus_rect(std::optional<elysia::core::Rect> focus_rect) noexcept;
     void set_world_bounds(std::optional<elysia::core::Rect> world_bounds) noexcept;
     void set_viewport_size(const elysia::core::Vector2& viewport_size) noexcept;
@@ -57,6 +58,7 @@ private:
     elysia::core::Vector2 _logical_center{};
     elysia::core::Vector2 _final_render_center{};
     std::unique_ptr<IFollowStrategy> _follow_strategy;
+    std::optional<CameraFocus> _focus;
     std::optional<elysia::core::Rect> _focus_rect;
     std::optional<elysia::core::Rect> _world_bounds;
     std::unique_ptr<CameraEffect> _active_effect;

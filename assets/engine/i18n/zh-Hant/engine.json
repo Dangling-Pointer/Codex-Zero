@@ -52,6 +52,8 @@
       "fields": {
         "window_mode": "顯示模式",
         "window_size": "視窗大小",
+        "target_fps": "幀率上限",
+        "vsync": "垂直同步",
         "master_volume": "主音量",
         "music_volume": "音樂音量",
         "sound_volume": "音效音量",
@@ -62,7 +64,10 @@
         "back": "返回"
       },
       "window_modes": {
-        "borderless_fullscreen": "無邊框全螢幕"
+        "borderless_fullscreen": "全螢幕"
+      },
+      "hints": {
+        "vsync_restart": "變更將在重新啟動遊戲後生效。"
       },
       "languages": {
         "en": "English",
@@ -72,7 +77,9 @@
         "ko": "한국어"
       },
       "status": {
-        "saved": "設定已儲存。"
+        "saved": "設定已儲存。",
+        "saved_restart_required": "設定已儲存。垂直同步將在重新啟動遊戲後生效。",
+        "restart_required": "請重新啟動遊戲以套用垂直同步變更。"
       }
     }
   }

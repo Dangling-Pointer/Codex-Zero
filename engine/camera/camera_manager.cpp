@@ -44,6 +44,11 @@ void CameraManager::set_zoom(CameraSlot slot, float zoom) noexcept
     rig(slot).controller.set_zoom(zoom);
 }
 
+void CameraManager::set_focus(CameraSlot slot, std::optional<CameraFocus> focus) noexcept
+{
+    rig(slot).controller.set_focus(focus);
+}
+
 void CameraManager::set_focus_rect(
     CameraSlot slot,
     std::optional<elysia::core::Rect> focus_rect

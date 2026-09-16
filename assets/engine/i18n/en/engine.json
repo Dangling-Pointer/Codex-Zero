@@ -52,6 +52,8 @@
       "fields": {
         "window_mode": "Display mode",
         "window_size": "Window size",
+        "target_fps": "Frame rate limit",
+        "vsync": "Vertical sync",
         "master_volume": "Master volume",
         "music_volume": "Music volume",
         "sound_volume": "Sound volume",
@@ -62,7 +64,10 @@
         "back": "Back"
       },
       "window_modes": {
-        "borderless_fullscreen": "Borderless fullscreen"
+        "borderless_fullscreen": "Fullscreen"
+      },
+      "hints": {
+        "vsync_restart": "Changes take effect after restarting the game."
       },
       "languages": {
         "en": "English",
@@ -72,7 +77,9 @@
         "ko": "한국어"
       },
       "status": {
-        "saved": "Settings saved."
+        "saved": "Settings saved.",
+        "saved_restart_required": "Settings saved. Vertical sync takes effect after restarting the game.",
+        "restart_required": "Restart the game to apply vertical sync changes."
       }
     }
   }

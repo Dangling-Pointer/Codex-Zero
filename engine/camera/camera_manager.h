@@ -34,6 +34,7 @@ public:
     void set_center(CameraSlot slot, const elysia::core::Vector2& center) noexcept;
     void set_viewport_size(CameraSlot slot, const elysia::core::Vector2& viewport_size) noexcept;
     void set_zoom(CameraSlot slot, float zoom) noexcept;
+    void set_focus(CameraSlot slot, std::optional<CameraFocus> focus) noexcept;
     void set_focus_rect(CameraSlot slot, std::optional<elysia::core::Rect> focus_rect) noexcept;
     void set_world_bounds(CameraSlot slot, std::optional<elysia::core::Rect> world_bounds) noexcept;
     void set_follow_strategy(CameraSlot slot, std::unique_ptr<IFollowStrategy> follow_strategy) noexcept;

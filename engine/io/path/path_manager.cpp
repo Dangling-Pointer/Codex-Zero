@@ -1,5 +1,6 @@
 #include "path_manager.h"
 
+#include <optional>
 #include <string>
 #include <vector>
 

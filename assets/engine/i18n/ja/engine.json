@@ -52,6 +52,8 @@
       "fields": {
         "window_mode": "表示モード",
         "window_size": "ウィンドウサイズ",
+        "target_fps": "フレームレート上限",
+        "vsync": "垂直同期",
         "master_volume": "マスター音量",
         "music_volume": "音楽音量",
         "sound_volume": "効果音音量",
@@ -62,7 +64,10 @@
         "back": "戻る"
       },
       "window_modes": {
-        "borderless_fullscreen": "ボーダーレスフルスクリーン"
+        "borderless_fullscreen": "フルスクリーン"
+      },
+      "hints": {
+        "vsync_restart": "変更はゲームの再起動後に反映されます。"
       },
       "languages": {
         "en": "English",
@@ -72,7 +77,9 @@
         "ko": "한국어"
       },
       "status": {
-        "saved": "設定を保存しました。"
+        "saved": "設定を保存しました。",
+        "saved_restart_required": "設定を保存しました。垂直同期はゲームの再起動後に反映されます。",
+        "restart_required": "垂直同期の変更を反映するにはゲームを再起動してください。"
       }
     }
   }

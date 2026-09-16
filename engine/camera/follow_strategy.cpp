@@ -5,15 +5,16 @@
 
 namespace elysia::camera
 {
-elysia::core::Vector2 HardFollowStrategy::update_center(
+CameraFollowResult HardFollowStrategy::update(
     const CameraFollowContext& context,
-    const elysia::core::Rect& focus_rect,
+    const CameraFocus& focus,
     double delta_seconds
-) const
+)
 {
+    const auto& focus_rect = focus.bounds;
     (void)context;
     (void)delta_seconds;
-    return focus_rect.center();
+    return {focus_rect.center(), std::nullopt};
 }
 
 DeadZoneFollowStrategy::DeadZoneFollowStrategy(
@@ -35,12 +36,13 @@ const elysia::core::Rect& DeadZoneFollowStrategy::dead_zone_rect() const noexcep
     return _dead_zone_rect;
 }
 
-elysia::core::Vector2 DeadZoneFollowStrategy::update_center(
+CameraFollowResult DeadZoneFollowStrategy::update(
     const CameraFollowContext& context,
-    const elysia::core::Rect& focus_rect,
+    const CameraFocus& focus,
     double delta_seconds
-) const
+)
 {
+    const auto& focus_rect = focus.bounds;
     (void)delta_seconds;
 
     const float zoom = Camera::clamp_zoom(context.zoom);
@@ -48,7 +50,7 @@ elysia::core::Vector2 DeadZoneFollowStrategy::update_center(
         || focus_rect.width() * zoom > _dead_zone_rect.width()
         || focus_rect.height() * zoom > _dead_zone_rect.height())
     {
-        return focus_rect.center();
+        return {focus_rect.center(), std::nullopt};
     }
 
     elysia::core::Vector2 updated_center = context.current_center;
@@ -86,7 +88,7 @@ elysia::core::Vector2 DeadZoneFollowStrategy::update_center(
             (focus_local_rect.bottom() - _dead_zone_rect.bottom()) / zoom;
     }
 
-    return updated_center;
+    return {updated_center, std::nullopt};
 }
 
 SmoothFollowStrategy::SmoothFollowStrategy(
@@ -108,18 +110,19 @@ double SmoothFollowStrategy::follow_speed_units_per_second() const noexcept
     return _follow_speed_units_per_second;
 }
 
-elysia::core::Vector2 SmoothFollowStrategy::update_center(
+CameraFollowResult SmoothFollowStrategy::update(
     const CameraFollowContext& context,
-    const elysia::core::Rect& focus_rect,
+    const CameraFocus& focus,
     double delta_seconds
-) const
+)
 {
+    const auto& focus_rect = focus.bounds;
     const elysia::core::Vector2 current_center = context.current_center;
     const elysia::core::Vector2 target_center = focus_rect.center();
 
     if (delta_seconds <= 0.0 || _follow_speed_units_per_second <= 0.0)
     {
-        return current_center;
+        return {current_center, std::nullopt};
     }
 
     const elysia::core::Vector2 delta = target_center - current_center;
@@ -128,9 +131,9 @@ elysia::core::Vector2 SmoothFollowStrategy::update_center(
 
     if (distance <= max_step || distance <= elysia::core::Vector2::k_epsilon)
     {
-        return target_center;
+        return {target_center, std::nullopt};
     }
 
-    return current_center + delta.normalized() * max_step;
+    return {current_center + delta.normalized() * max_step, std::nullopt};
 }
 }

@@ -12,7 +12,7 @@ namespace game::scene
 namespace
 {
 constexpr int kRoomColumns = 20;
-constexpr int kRoomRows = 12;
+constexpr int kRoomRows = 12;    
 constexpr float kTileSize = 64.0f;
 
 class RoomBoundaryWorld final : public elysia::physics::ITileCollisionWorld

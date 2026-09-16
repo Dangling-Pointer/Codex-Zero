@@ -17,16 +17,27 @@ void CameraController::set_follow_strategy(
 ) noexcept
 {
     _follow_strategy = std::move(follow_strategy);
+    if (_follow_strategy) _follow_strategy->reset();
 }
 
 void CameraController::set_focus_rect(
     std::optional<elysia::core::Rect> focus_rect
 ) noexcept
 {
-    if (!focus_rect.has_value())
-        _has_initialized_focus = false;
+    set_focus(focus_rect ? std::optional(CameraFocus{*focus_rect, *focus_rect}) : std::nullopt);
+}
 
-    _focus_rect = focus_rect;
+void CameraController::set_focus(std::optional<CameraFocus> focus) noexcept
+{
+    if (focus && (!valid_focus_rect(focus->bounds) || !valid_focus_rect(focus->primary)))
+        focus.reset();
+    if (!focus)
+    {
+        _has_initialized_focus = false;
+        if (_follow_strategy) _follow_strategy->reset();
+    }
+    _focus = focus;
+    _focus_rect = focus ? std::optional(focus->bounds) : std::nullopt;
 }
 
 void CameraController::set_world_bounds(
@@ -113,6 +124,7 @@ void CameraController::clear_effects() noexcept
 void CameraController::reset_scene_state() noexcept
 {
     _follow_strategy.reset();
+    _focus.reset();
     _focus_rect.reset();
     _world_bounds.reset();
     _active_effect.reset();
@@ -125,29 +137,23 @@ void CameraController::reset_scene_state() noexcept
 
 void CameraController::update(double delta_seconds)
 {
+    const bool manual_zoom = _zoom_transition.has_value();
     update_zoom_transition(delta_seconds);
 
-    if (_focus_rect.has_value())
+    if (_focus)
     {
-        if (!_has_initialized_focus)
-        {
-            snap_to_focus();
-            _has_initialized_focus = true;
-        }
+        const bool snap = !_has_initialized_focus
+            && (!_follow_strategy || _follow_strategy->snap_on_acquisition());
+        if (snap) snap_to_focus();
         else if (_follow_strategy)
         {
             const CameraFollowContext context{
-                _logical_center,
-                _camera.viewport_size(),
-                _camera.zoom()
-            };
-
-            _logical_center = _follow_strategy->update_center(
-                context,
-                *_focus_rect,
-                delta_seconds
-            );
+                _logical_center, _camera.viewport_size(), _camera.zoom(), !manual_zoom};
+            const auto result = _follow_strategy->update(context, *_focus, delta_seconds);
+            if (result.zoom && !manual_zoom) _camera.set_zoom(*result.zoom);
+            _logical_center = result.center;
         }
+        _has_initialized_focus = true;
     }
 
     _logical_center = clamp_center_to_world_bounds(_logical_center);

@@ -147,9 +147,9 @@ void Scene::on_update(double delta)
             _physics_world.debug_snapshot(), *physics_debug_draw);
 
     auto* camera_manager = elysia::camera::CameraManager::instance();
-    camera_manager->set_focus_rect(
+    camera_manager->set_focus(
         elysia::camera::CameraSlot::Main,
-        resolve_camera_focus_rect()
+        resolve_camera_focus()
     );
     camera_manager->update(delta);
 
@@ -458,6 +458,12 @@ elysia::physics::PhysicsWorld& Scene::physics_world() noexcept
 const elysia::physics::PhysicsWorld& Scene::physics_world() const noexcept
 {
     return _physics_world;
+}
+
+std::optional<elysia::camera::CameraFocus> Scene::resolve_camera_focus() const
+{
+    const auto rect = resolve_camera_focus_rect();
+    return rect ? std::optional(elysia::camera::CameraFocus{*rect, *rect}) : std::nullopt;
 }
 
 std::optional<elysia::core::Rect> Scene::resolve_camera_focus_rect() const
