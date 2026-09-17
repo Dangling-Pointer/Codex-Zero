@@ -11,6 +11,8 @@
 #include <variant>
 #include <vector>
 
+#define ELYSIA_DEBUG_DRAW (::elysia::tools::DebugDraw::instance())
+
 namespace elysia::tools
 {
 enum class DebugDrawCategory : std::uint32_t

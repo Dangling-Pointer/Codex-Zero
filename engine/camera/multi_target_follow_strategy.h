@@ -27,6 +27,7 @@ public:
     void reset() noexcept override;
     [[nodiscard]] CameraFollowResult update(const CameraFollowContext& context,
         const CameraFocus& focus, double delta_seconds) override;
+
 private:
     MultiTargetFollowConfig _config;
     double _zoom_in_time = 0.0;

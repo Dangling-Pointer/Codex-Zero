@@ -18,9 +18,12 @@ PlayerCharacter::PlayerCharacter(const elysia::core::Vector2 start_position)
     : GameObject(elysia::core::DepthLayer::Character)
 {
     set_world_rect({start_position.x, start_position.y, kPlayerSize, kPlayerSize});
+
     _body_collider.shape = elysia::physics::AabbShape{
         {kColliderLeft, kColliderTop, kColliderWidth, kColliderHeight}};
+
     _body_collider.response = elysia::physics::CollisionResponse::Block;
+    
     _body_collider.material.friction = 0.0f;
 }
 

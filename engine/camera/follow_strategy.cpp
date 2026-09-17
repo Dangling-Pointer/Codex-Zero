@@ -5,11 +5,8 @@
 
 namespace elysia::camera
 {
-CameraFollowResult HardFollowStrategy::update(
-    const CameraFollowContext& context,
-    const CameraFocus& focus,
-    double delta_seconds
-)
+CameraFollowResult HardFollowStrategy::update(const CameraFollowContext& context,
+    const CameraFocus& focus,double delta_seconds)
 {
     const auto& focus_rect = focus.bounds;
     (void)context;
@@ -17,16 +14,10 @@ CameraFollowResult HardFollowStrategy::update(
     return {focus_rect.center(), std::nullopt};
 }
 
-DeadZoneFollowStrategy::DeadZoneFollowStrategy(
-    const elysia::core::Rect& dead_zone_rect
-) noexcept
-    : _dead_zone_rect(dead_zone_rect)
-{
-}
+DeadZoneFollowStrategy::DeadZoneFollowStrategy(const elysia::core::Rect& dead_zone_rect) noexcept
+    : _dead_zone_rect(dead_zone_rect){}
 
-void DeadZoneFollowStrategy::set_dead_zone_rect(
-    const elysia::core::Rect& dead_zone_rect
-) noexcept
+void DeadZoneFollowStrategy::set_dead_zone_rect(const elysia::core::Rect& dead_zone_rect) noexcept
 {
     _dead_zone_rect = dead_zone_rect;
 }
@@ -38,9 +29,7 @@ const elysia::core::Rect& DeadZoneFollowStrategy::dead_zone_rect() const noexcep
 
 CameraFollowResult DeadZoneFollowStrategy::update(
     const CameraFollowContext& context,
-    const CameraFocus& focus,
-    double delta_seconds
-)
+    const CameraFocus& focus,double delta_seconds)
 {
     const auto& focus_rect = focus.bounds;
     (void)delta_seconds;
@@ -55,9 +44,7 @@ CameraFollowResult DeadZoneFollowStrategy::update(
 
     elysia::core::Vector2 updated_center = context.current_center;
     const elysia::core::Rect view_rect = elysia::core::Rect::from_center(
-        context.current_center,
-        context.viewport_size / zoom
-    );
+        context.current_center,context.viewport_size / zoom);
 
     const elysia::core::Rect focus_local_rect(
         (focus_rect.x() - view_rect.x()) * zoom,
@@ -91,16 +78,10 @@ CameraFollowResult DeadZoneFollowStrategy::update(
     return {updated_center, std::nullopt};
 }
 
-SmoothFollowStrategy::SmoothFollowStrategy(
-    double follow_speed_units_per_second
-) noexcept
-    : _follow_speed_units_per_second(std::max(0.0, follow_speed_units_per_second))
-{
-}
+SmoothFollowStrategy::SmoothFollowStrategy(double follow_speed_units_per_second) noexcept
+    : _follow_speed_units_per_second(std::max(0.0, follow_speed_units_per_second)){}
 
-void SmoothFollowStrategy::set_follow_speed_units_per_second(
-    double follow_speed_units_per_second
-) noexcept
+void SmoothFollowStrategy::set_follow_speed_units_per_second(double follow_speed_units_per_second) noexcept
 {
     _follow_speed_units_per_second = std::max(0.0, follow_speed_units_per_second);
 }
@@ -110,11 +91,8 @@ double SmoothFollowStrategy::follow_speed_units_per_second() const noexcept
     return _follow_speed_units_per_second;
 }
 
-CameraFollowResult SmoothFollowStrategy::update(
-    const CameraFollowContext& context,
-    const CameraFocus& focus,
-    double delta_seconds
-)
+CameraFollowResult SmoothFollowStrategy::update(const CameraFollowContext& context,
+    const CameraFocus& focus,double delta_seconds)
 {
     const auto& focus_rect = focus.bounds;
     const elysia::core::Vector2 current_center = context.current_center;

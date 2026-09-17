@@ -1,11 +1,15 @@
 #include "room_scene.h"
 
 #include "../characters/player_character.h"
+#include "../characters/character.h"
+
 #include "scene_keys.h"
 
 #include "../../engine/core/render/colors.h"
 #include "../../engine/core/render/render_command.h"
 #include "../../engine/physics/tile/tile_collision_world.h"
+
+#include "../../engine/tools/debug_draw.h"
 
 namespace game::scene
 {
@@ -67,9 +71,22 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
     _player = create_and_add_object<game::characters::PlayerCharacter>(
         elysia::core::Vector2{(kRoomColumns * kTileSize - 64.0f) * 0.5f,
                               (kRoomRows * kTileSize - 64.0f) * 0.5f});
+
+    //test
+    (void)create_and_add_object<game::characters::Character>(elysia::core::Vector2{100,100});
+
+    //set up for debug draw
+    ELYSIA_DEBUG_DRAW->set_enabled(true);
+    ELYSIA_DEBUG_DRAW->set_enabled_categories(elysia::tools::DebugDrawCategory::All);
+
 }
 
-void RoomScene::on_exit() { clear_room(); }
+void RoomScene::on_exit()
+{
+    ELYSIA_DEBUG_DRAW->set_enabled(false);
+    clear_room(); 
+
+}
 void RoomScene::reset() { clear_room(); }
 
 void RoomScene::on_input(const elysia::input::RawInputFrame& input,

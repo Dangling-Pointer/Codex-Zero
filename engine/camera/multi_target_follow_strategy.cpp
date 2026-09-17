@@ -10,6 +10,7 @@ namespace
 float fit_zoom(const elysia::core::Rect& bounds, elysia::core::Vector2 viewport, float ratio)
 {
     const float infinity = std::numeric_limits<float>::infinity();
+
     return std::min(bounds.width() > 0 ? viewport.x * ratio / bounds.width() : infinity,
         bounds.height() > 0 ? viewport.y * ratio / bounds.height() : infinity);
 }
@@ -21,7 +22,9 @@ float blend(double dt, double half_life)
 
 float center_axis(float current, float low, float high, float visible)
 {
-    if (high - low > visible) return low + (high - low) * 0.5f;
+    if (high - low > visible)
+        return low + (high - low) * 0.5f;
+
     return std::clamp(current, high - visible * 0.5f, low + visible * 0.5f);
 }
 
@@ -29,6 +32,7 @@ bool inside(const elysia::core::Rect& bounds, elysia::core::Vector2 center,
     elysia::core::Vector2 size)
 {
     const auto view = elysia::core::Rect::from_center(center, size);
+
     return bounds.left() >= view.left() && bounds.right() <= view.right()
         && bounds.top() >= view.top() && bounds.bottom() <= view.bottom();
 }
@@ -44,6 +48,7 @@ void MultiTargetFollowStrategy::set_config(MultiTargetFollowConfig config) noexc
     auto positive = [](double value, double fallback) {
         return std::isfinite(value) && value > 0 ? value : fallback;
     };
+
     config.safe_ratio = std::clamp(static_cast<float>(positive(config.safe_ratio, 0.70)), 0.02f, 1.0f);
     config.inner_ratio = std::clamp(static_cast<float>(positive(config.inner_ratio, 0.55)),
         0.01f, config.safe_ratio - 0.01f);
@@ -53,13 +58,16 @@ void MultiTargetFollowStrategy::set_config(MultiTargetFollowConfig config) noexc
     config.zoom_out_half_life = positive(config.zoom_out_half_life, 0.10);
     config.zoom_in_half_life = positive(config.zoom_in_half_life, 0.35);
     config.settle_seconds = positive(config.settle_seconds, 0.4);
+
     _config = config;
+
     reset();
 }
 
 void MultiTargetFollowStrategy::reset() noexcept
 {
     _zoom_in_time = _recovery_time = 0.0;
+
     _zooming_in = _primary_only = false;
 }
 
@@ -85,7 +93,9 @@ CameraFollowResult MultiTargetFollowStrategy::update(const CameraFollowContext& 
         if (fit_zoom(focus.bounds, context.viewport_size, c.inner_ratio) >= c.min_zoom)
             _recovery_time += dt;
         else _recovery_time = 0;
-        if (_recovery_time >= c.settle_seconds) _primary_only = false;
+
+        if (_recovery_time >= c.settle_seconds)
+            _primary_only = false;
     }
 
     float zoom = Camera::clamp_zoom(context.zoom);
@@ -108,12 +118,14 @@ CameraFollowResult MultiTargetFollowStrategy::update(const CameraFollowContext& 
                 _zooming_in = _zoom_in_time >= c.settle_seconds;
                 zoom_dt = std::max(0.0, dt - std::max(0.0, c.settle_seconds - previous));
             }
-            else _zoom_in_time = 0;
+            else
+                _zoom_in_time = 0;
         }
         // Bring an explicit manual zoom outside the configured range back smoothly as well.
         if (target < zoom || _zooming_in || _primary_only || zoom < c.min_zoom)
             zoom += (target - zoom) * blend(zoom_dt,
                 target < zoom ? c.zoom_out_half_life : c.zoom_in_half_life);
+
         output_zoom = zoom;
     }
     else
