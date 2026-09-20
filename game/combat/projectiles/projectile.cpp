@@ -39,7 +39,13 @@ void Projectile::on_collision_event(
     if (event.contact.pair.first != target && event.contact.pair.second != target)
         return;
 
-    if (on_collision(event))
+    const auto &other = event.contact.pair.first == target
+                            ? event.contact.pair.second
+                            : event.contact.pair.first;
+    const bool handled = other.kind == elysia::physics::CollisionTargetKind::Collider
+                             ? on_entity_collision(event)
+                             : on_collision(event);
+    if (handled)
         destroy();
 }
 
@@ -48,6 +54,17 @@ bool Projectile::on_collision(
 {
     (void)event;
     return true;
+}
+
+bool Projectile::on_entity_collision(
+    const elysia::physics::CollisionEvent &event) noexcept
+{
+    (void)event;
+    return true;
+}
+
+void Projectile::on_death() noexcept
+{
 }
 
 elysia::physics::BodyDefinition Projectile::body_definition() const
@@ -73,15 +90,30 @@ void Projectile::set_velocity(elysia::core::Vector2 velocity) noexcept
     elysia::physics::PhysicsParticipant::set_velocity(velocity);
 }
 
+void Projectile::set_restitution(float restitution) noexcept
+{
+    _collider.material.restitution = std::clamp(restitution, 0.0f, 1.0f);
+    if (physics_world())
+        update_physics_collider(0, _collider);
+}
+
 void Projectile::destroy() noexcept
 {
+    if (is_destroyed())
+        return;
+
     unregister_collision_listener();
+    if (!_death_notified)
+    {
+        _death_notified = true;
+        on_death();
+    }
     elysia::core::SceneObject::destroy();
 }
 
 [[nodiscard]] elysia::core::Vector2 Projectile::projectile_velocity() const noexcept
 {
-    return _velocity;
+    return physics_world() ? PhysicsParticipant::velocity() : _velocity;
 }
 
 [[nodiscard]] double Projectile::age_seconds() const noexcept
@@ -94,6 +126,7 @@ void Projectile::reset() noexcept
 {
     elysia::core::GameObject::reset();
     _age_seconds = 0.0;
+    _death_notified = false;
 }
 
 // private

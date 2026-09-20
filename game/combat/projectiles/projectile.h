@@ -30,8 +30,11 @@ public:
     void on_collision_event(const elysia::physics::CollisionEvent &event) override;
 
     void set_velocity(elysia::core::Vector2 velocity) noexcept;
+    void set_restitution(float restitution) noexcept;
 
     [[nodiscard]] virtual bool on_collision(const elysia::physics::CollisionEvent &event) noexcept;
+    [[nodiscard]] virtual bool on_entity_collision(const elysia::physics::CollisionEvent &event) noexcept;
+    virtual void on_death() noexcept;
 
     [[nodiscard]] elysia::physics::BodyDefinition body_definition() const override;
 
@@ -55,4 +58,5 @@ private:
     elysia::physics::Collider _collider{};
     double _age_seconds = 0.0;
     bool _listener_registered = false;
+    bool _death_notified = false;
 };

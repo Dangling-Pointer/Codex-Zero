@@ -13,6 +13,27 @@ class Character
 	  public elysia::physics::PhysicsParticipant,
 	  public elysia::physics::PhysicsStepParticipant
 {
+
+	enum class Facing
+	{
+		Left,
+		Right,
+	};
+
+	enum class State
+	{
+		Alive,
+		Dead
+	};
+	enum class AnimationState
+	{
+		Idle,
+		Moving,
+		Attack,
+		Hurt,
+		Death
+	};
+
 public:
 	Character(elysia::core::Vector2 start_position) noexcept;
 	~Character() override = default;
@@ -27,5 +48,12 @@ public:
 
 private:
 	elysia::physics::Collider _body_collider;
+
 	bool _facing_left = false;
+	// elysia::gameplay::collision::TeamId team = elysia::gameplay::collision::teams::Neutral;
+	//  elysia::core::Vector2 _desired_velocity = elysia::core::Vector2::zero();
+	elysia::core::Rect _collision_rect{};
+	float _move_speed = 240.0f;
+	float _hp = 100.0f;
+	bool _is_dead = false;
 };
