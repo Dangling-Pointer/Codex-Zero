@@ -3,15 +3,13 @@
 #include "../../engine/core/render/colors.h"
 #include "../../engine/core/render/render_command.h"
 
-namespace game::characters
-{
 namespace
 {
-constexpr float kPlayerSize = 64.0f;
-constexpr float kColliderWidth = kPlayerSize * 0.65f;
-constexpr float kColliderHeight = kPlayerSize * 0.38f;
-constexpr float kColliderLeft = (kPlayerSize - kColliderWidth) * 0.5f;
-constexpr float kColliderTop = kPlayerSize - kColliderHeight;
+    constexpr float kPlayerSize = 64.0f;
+    constexpr float kColliderWidth = kPlayerSize * 0.65f;
+    constexpr float kColliderHeight = kPlayerSize * 0.38f;
+    constexpr float kColliderLeft = (kPlayerSize - kColliderWidth) * 0.5f;
+    constexpr float kColliderTop = kPlayerSize - kColliderHeight;
 }
 
 PlayerCharacter::PlayerCharacter(const elysia::core::Vector2 start_position)
@@ -23,13 +21,13 @@ PlayerCharacter::PlayerCharacter(const elysia::core::Vector2 start_position)
         {kColliderLeft, kColliderTop, kColliderWidth, kColliderHeight}};
 
     _body_collider.response = elysia::physics::CollisionResponse::Block;
-    
+
     _body_collider.material.friction = 0.0f;
 }
 
 void PlayerCharacter::update(double delta_seconds) { (void)delta_seconds; }
 
-void PlayerCharacter::on_gameplay_input_frame(const elysia::gameplay::GameplayInputFrame& input)
+void PlayerCharacter::on_gameplay_input_frame(const elysia::gameplay::GameplayInputFrame &input)
 {
     _movement = input.move();
     if (!_movement.is_zero())
@@ -49,11 +47,11 @@ void PlayerCharacter::fixed_update(double fixed_delta_seconds)
 }
 
 void PlayerCharacter::submit_render_commands(
-    std::vector<elysia::core::RenderCommand>& out_commands) const
+    std::vector<elysia::core::RenderCommand> &out_commands) const
 {
     out_commands.push_back(elysia::core::make_world_fill_rect_command(
         render_rect(), elysia::core::colors::blue_500));
-    const elysia::core::Rect& rect = render_rect();
+    const elysia::core::Rect &rect = render_rect();
     const float marker_x = _facing_left ? rect.left() : rect.right();
     out_commands.push_back(elysia::core::make_world_draw_line_command(
         {marker_x, rect.center().y},
@@ -76,4 +74,3 @@ std::span<const elysia::physics::Collider> PlayerCharacter::collider_definitions
 {
     return std::span<const elysia::physics::Collider>(&_body_collider, 1);
 }
-} // namespace game::characters

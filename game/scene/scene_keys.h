@@ -2,10 +2,7 @@
 
 #include "../../engine/scene/routing/scene_key.h"
 
-namespace game::scene_keys
-{
-	inline constexpr elysia::scene::SceneKey MainMenu = 2;
-	inline constexpr elysia::scene::SceneKey GameScene = 3;
+inline constexpr elysia::scene::SceneKey MainMenu = 2;
+inline constexpr elysia::scene::SceneKey Game = 3;
 
-	inline constexpr elysia::scene::SceneKey RoomScene = 998;
-}
+inline constexpr elysia::scene::SceneKey Room = 998;

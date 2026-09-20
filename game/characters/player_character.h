@@ -8,22 +8,20 @@
 
 #include <span>
 
-namespace game::characters
-{
 class PlayerCharacter final
-    : public elysia::core::GameObject
-    , public elysia::core::Updatable
-    , public elysia::gameplay::GameplayInputFrameReceiver
-    , public elysia::physics::PhysicsParticipant
-    , public elysia::physics::PhysicsStepParticipant
+    : public elysia::core::GameObject,
+      public elysia::core::Updatable,
+      public elysia::gameplay::GameplayInputFrameReceiver,
+      public elysia::physics::PhysicsParticipant,
+      public elysia::physics::PhysicsStepParticipant
 {
 public:
     static constexpr float kMoveSpeed = 200.0f;
     explicit PlayerCharacter(elysia::core::Vector2 start_position);
     void update(double delta_seconds) override;
-    void on_gameplay_input_frame(const elysia::gameplay::GameplayInputFrame& input) override;
+    void on_gameplay_input_frame(const elysia::gameplay::GameplayInputFrame &input) override;
     void fixed_update(double fixed_delta_seconds) override;
-    void submit_render_commands(std::vector<elysia::core::RenderCommand>& out_commands) const override;
+    void submit_render_commands(std::vector<elysia::core::RenderCommand> &out_commands) const override;
     [[nodiscard]] elysia::physics::BodyDefinition body_definition() const override;
     [[nodiscard]] std::span<const elysia::physics::Collider> collider_definitions() const override;
 
@@ -32,4 +30,3 @@ private:
     elysia::core::Vector2 _movement{};
     bool _facing_left = false;
 };
-} // namespace game::characters

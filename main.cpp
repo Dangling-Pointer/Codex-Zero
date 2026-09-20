@@ -4,13 +4,14 @@
 
 #include <cstdlib>
 
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
-	game::application::GameModule game_module;
-	
+	GameModule game_module;
+
 	if (!ELYSIA_INITIALIZE_APP(argc, argv, game_module))
 		return EXIT_FAILURE;
-	
+
 	return ELYSIA_RUN_APP == elysia::application::ApplicationRunResult::NormalExit
-		? EXIT_SUCCESS: EXIT_FAILURE;
+			   ? EXIT_SUCCESS
+			   : EXIT_FAILURE;
 }
