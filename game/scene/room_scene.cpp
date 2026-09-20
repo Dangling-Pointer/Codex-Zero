@@ -69,10 +69,8 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload &payload)
         elysia::core::Vector2{(kRoomColumns * kTileSize - 64.0f) * 0.5f,
                               (kRoomRows * kTileSize - 64.0f) * 0.5f});
 
-    // test
     (void)create_and_add_object<Character>(elysia::core::Vector2{100, 100});
 
-    // set up for debug draw
     ELYSIA_DEBUG_DRAW->set_enabled(true);
     ELYSIA_DEBUG_DRAW->set_enabled_categories(elysia::tools::DebugDrawCategory::All);
 }

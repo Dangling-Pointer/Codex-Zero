@@ -3,6 +3,7 @@
 #include "../../engine/gameplay/scene/gameplay_scene.h"
 
 class PlayerCharacter;
+class DungeonRoom;
 
 class RoomScene final : public elysia::gameplay::GameplayScene
 {

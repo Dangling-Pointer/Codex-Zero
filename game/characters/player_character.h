@@ -8,6 +8,8 @@
 
 #include <span>
 
+// TODO make input accumulate velocity, slowed down by friction
+
 class PlayerCharacter final
     : public elysia::core::GameObject,
       public elysia::core::Updatable,

@@ -4,6 +4,7 @@
 #include <optional>
 
 class PlayerCharacter;
+class DungeonRoom;
 
 class GameScene : public elysia::gameplay::GameplayScene
 {
@@ -25,5 +26,5 @@ private:
 
 private:
 	PlayerCharacter *_player = nullptr;
-	elysia::core::GameObject *_room_boundary = nullptr;
+	DungeonRoom *_room = nullptr;
 };
