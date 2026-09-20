@@ -108,7 +108,7 @@ void MainMenuScene::build_menu_buttons()
     ui_button->set_sounds(menu_button_sounds);
     ui_button->set_on_click([this]
                             {
-            Scene::request_scene_switch(Room);
+            Scene::request_scene_switch(Game);
             ELYSIA_LOG_DEBUG("MainMenuScene", "menu_scene.start button clicked"); });
     ui_list->add_back(std::move(ui_button));
 
