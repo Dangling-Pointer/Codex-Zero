@@ -8,7 +8,7 @@ Early prototype development took place in this repository:: [Project-Hail-Mary](
 
 Project-authored source code, build files, tests, documentation, and editable
 asset configuration files are licensed under
-[GPL-3.0-only](LICENSE). Protected game assets are not covered by that grant:
+[MIT](LICENSE). Protected game assets are not covered by that grant:
 see [the assets license](assets/LICENSE.md). Third-party dependencies retain
 their own licenses; see [Third-Party Notices](THIRD_PARTY_NOTICES.md).
 
