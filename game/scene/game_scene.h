@@ -1,6 +1,7 @@
 #pragma once
 #include "../../engine/gameplay/scene/gameplay_scene.h"
 #include "../combat/wand/wand.h"
+#include "../combat/projectile_manager.h"
 #include <optional>
 
 class PlayerCharacter;
@@ -15,6 +16,7 @@ public:
 	void on_enter(const elysia::scene::ScenePayload &payload) override;
 	void on_exit() override;
 	void reset() override;
+	void on_update(double delta) override;
 	void on_input(const elysia::input::RawInputFrame &input,
 				  const std::vector<elysia::input::RawInputEvent> &events) override;
 
@@ -31,4 +33,5 @@ private:
 	// tmp
 	void fire_test_wand();
 	Wand _test_wand;
+	ProjectileManager _projectiles;
 };

@@ -59,3 +59,10 @@ add_executable(CodexZero "main.cpp")
 target_link_libraries(CodexZero PRIVATE game_lib)
 
 elysia_copy_sdl_runtime(CodexZero)
+
+if(BUILD_TESTING)
+    add_executable(projectile_tests tests/projectile_tests.cpp)
+    target_link_libraries(projectile_tests PRIVATE game_lib)
+    elysia_copy_sdl_runtime(projectile_tests)
+    add_test(NAME projectile_tests COMMAND projectile_tests)
+endif()

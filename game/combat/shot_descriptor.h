@@ -9,11 +9,11 @@ shot actually fires so delayed shots still spawn relative to the character’s c
 */
 struct ShotDescriptor
 {
-    Bullet_Attributes bullet_attributes;
+    Bullet_Attributes bullet_attributes{};
 
     // Bullet position position relative to character pos
-    elysia::core::Vector2 spawn_offset;
-    elysia::core::Vector2 shot_direction;
+    elysia::core::Vector2 spawn_offset{};
+    elysia::core::Vector2 shot_direction{};
 
-    float spawn_delay_sec;
+    float spawn_delay_sec = 0.0f;
 };

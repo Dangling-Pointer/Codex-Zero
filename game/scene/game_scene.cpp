@@ -9,7 +9,8 @@
 #include "../../engine/tools/debug_draw.h"
 #include "../../engine/camera/camera_manager.h"
 
-#include "../combat/projectiles/bullet.h"
+#include "../combat/projectile_service.h"
+#include "../../engine/tools/logger.h"
 
 void GameScene::on_enter(const elysia::scene::ScenePayload &payload)
 {
@@ -17,6 +18,10 @@ void GameScene::on_enter(const elysia::scene::ScenePayload &payload)
 
     if (_player)
         return;
+
+    _projectiles.bind_scene(*this, physics_world());
+    if (!ProjectileService::instance()->bind_manager(_projectiles))
+        ELYSIA_LOG_ERROR("GameScene", "Cannot bind projectile service.");
 
     _room = create_and_add_object<DungeonRoom>();
     (void)physics_world().set_tile_world(*_room);
@@ -44,6 +49,13 @@ void GameScene::on_exit()
 
 void GameScene::reset() { clear_room(); }
 
+void GameScene::on_update(double delta)
+{
+    if (!_paused)
+        _projectiles.update(delta);
+    elysia::gameplay::GameplayScene::on_update(delta);
+}
+
 void GameScene::on_input(const elysia::input::RawInputFrame &input,
                          const std::vector<elysia::input::RawInputEvent> &events)
 {
@@ -55,7 +67,8 @@ void GameScene::on_input(const elysia::input::RawInputFrame &input,
             request_scene_switch(MainMenu);
             return;
         }
-        if (event.control == elysia::input::RawInputControl::KeyF)
+        if (!_paused && event.type == elysia::input::RawInputEventType::ControlPressed
+            && event.control == elysia::input::RawInputControl::KeyF)
         {
             fire_test_wand();
             return;
@@ -72,6 +85,7 @@ std::optional<elysia::core::Rect> GameScene::resolve_camera_focus_rect() const
 
 void GameScene::clear_room() noexcept
 {
+    _projectiles.unbind_scene();
     if (_player)
         _player->destroy();
     if (_room)
@@ -85,19 +99,10 @@ void GameScene::clear_room() noexcept
 
 void GameScene::fire_test_wand()
 {
-    if (!_player || _player->is_destroyed())
+    if (_paused || !_player || _player->is_destroyed())
         return;
 
     const elysia::core::Vector2 direction{1.0f, 0.0f};
-    const std::vector<ShotDescriptor> shots = _test_wand.attack(direction);
-
-    for (const ShotDescriptor &shot : shots)
-    {
-        Bullet_Attributes attributes = shot.bullet_attributes;
-        attributes.start_position = _player->center() + shot.spawn_offset;
-        attributes.starting_velocity =
-            shot.shot_direction * attributes.bullet_speed;
-
-        (void)create_and_add_object<Bullet>(attributes);
-    }
+    if (!ProjectileService::instance()->request_fire({_player, _test_wand.attack(direction)}))
+        ELYSIA_LOG_WARN("GameScene", "Projectile fire request rejected.");
 }

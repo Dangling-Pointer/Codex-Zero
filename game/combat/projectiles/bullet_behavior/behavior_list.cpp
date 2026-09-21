@@ -1,6 +1,6 @@
 #include "behavior_list.h"
 
-#include "../../../engine/core/geometry/vector2.h"
+#include "engine/core/geometry/vector2.h"
 #include "../bullet.h"
 
 void AccelerationBehavior::on_update(BulletBehaviorContext &context)

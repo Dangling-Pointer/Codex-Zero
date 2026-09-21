@@ -1,10 +1,10 @@
 #pragma once
 
-#include "../../engine/core/game_object.h"
-#include "../../engine/core/interface/updatable.h"
-#include "../../engine/physics/contracts/collision_listener.h"
-#include "../../engine/physics/contracts/physics_participant.h"
-#include "../../engine/physics/contracts/physics_step_participant.h"
+#include "engine/core/game_object.h"
+#include "engine/core/interface/updatable.h"
+#include "engine/physics/contracts/collision_listener.h"
+#include "engine/physics/contracts/physics_participant.h"
+#include "engine/physics/contracts/physics_step_participant.h"
 
 #include <algorithm>
 #include <span>

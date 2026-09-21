@@ -1,7 +1,7 @@
 #include "bullet.h"
 
-#include "../../engine/core/render/render_command.h"
-#include "../../engine/resources/resource_service.h"
+#include "engine/core/render/render_command.h"
+#include "engine/resources/resource_service.h"
 #include "bullet_behavior/bullet_behavior_context.h"
 
 #include <cmath>
