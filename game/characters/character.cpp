@@ -1,34 +1,30 @@
 #include "character.h"
 
-#include "../../engine/core/render/colors.h"
-#include "../../engine/core/render/render_command.h"
-
-Character::Character(elysia::core::Vector2 start_position) noexcept
-    : elysia::core::GameObject(elysia::core::DepthLayer::Character)
+Character::Character(elysia::core::Vector2 start_position, elysia::core::Vector2 size,
+                     elysia::core::Rect local_collision_rect, float move_speed,
+                     elysia::gameplay::collision::TeamId team) noexcept
+    : GameObject(elysia::core::DepthLayer::Character), _move_speed(move_speed), _team(team)
 {
-    // tmp
-    set_world_rect({start_position.x, start_position.y, 30, 30});
-
-    _body_collider.material = elysia::physics::PhysicsMaterial{.friction = 0.5, .restitution = 1};
-    // friction not working because there is no friction on floor tile
-
-    _body_collider.shape = elysia::physics::AabbShape{{32, 32, 32, 32}};
+    set_world_rect({start_position, size});
+    _body_collider.shape = elysia::physics::AabbShape{local_collision_rect};
     _body_collider.response = elysia::physics::CollisionResponse::Block;
+    _body_collider.material.friction = 0.0f;
+    _body_collider.material.restitution = 0.0f;
 }
 
-void Character::update(double delta)
+void Character::set_move_direction(elysia::core::Vector2 direction) noexcept
 {
-    (void)delta;
+    _move_direction = direction.is_zero() ? elysia::core::Vector2{} : direction.normalized();
+    if (_move_direction.x < 0.0f)
+        _facing = Facing::Left;
+    else if (_move_direction.x > 0.0f)
+        _facing = Facing::Right;
 }
 
 void Character::fixed_update(double fixed_delta_seconds)
 {
     (void)fixed_delta_seconds;
-}
-
-void Character::submit_render_commands(std::vector<elysia::core::RenderCommand> &out_commands) const
-{
-    out_commands.push_back(elysia::core::make_world_fill_rect_command(render_rect(), elysia::core::colors::red_500));
+    set_velocity(_move_direction * _move_speed);
 }
 
 elysia::physics::BodyDefinition Character::body_definition() const

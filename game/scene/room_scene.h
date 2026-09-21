@@ -3,6 +3,7 @@
 #include "../../engine/gameplay/scene/gameplay_scene.h"
 
 class PlayerCharacter;
+class Enemy;
 class DungeonRoom;
 
 class RoomScene final : public elysia::gameplay::GameplayScene
@@ -23,5 +24,6 @@ protected:
 private:
     void clear_room() noexcept;
     PlayerCharacter *_player = nullptr;
+    Enemy *_enemy = nullptr;
     elysia::core::GameObject *_room_boundary = nullptr;
 };

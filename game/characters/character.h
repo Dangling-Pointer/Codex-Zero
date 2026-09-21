@@ -1,59 +1,39 @@
 #pragma once
 
-#include "../../engine/core/game_object.h"
-#include "../../engine/core/interface/updatable.h"
-#include "../../engine/physics/contracts/physics_participant.h"
-#include "../../engine/physics/contracts/physics_step_participant.h"
+#include "engine/core/game_object.h"
+#include "engine/gameplay/collision/gameplay_collision_types.h"
+#include "engine/physics/contracts/physics_participant.h"
+#include "engine/physics/contracts/physics_step_participant.h"
 
 #include <span>
 
-class Character
-	: public elysia::core::GameObject,
-	  public elysia::core::Updatable,
-	  public elysia::physics::PhysicsParticipant,
-	  public elysia::physics::PhysicsStepParticipant
+class Character : public elysia::core::GameObject,
+                  public elysia::physics::PhysicsParticipant,
+                  public elysia::physics::PhysicsStepParticipant
 {
-
-	enum class Facing
-	{
-		Left,
-		Right,
-	};
-
-	enum class State
-	{
-		Alive,
-		Dead
-	};
-	enum class AnimationState
-	{
-		Idle,
-		Moving,
-		Attack,
-		Hurt,
-		Death
-	};
-
 public:
-	Character(elysia::core::Vector2 start_position) noexcept;
-	~Character() override = default;
+    enum class Facing { Left, Right };
 
-	void update(double delta) override;
-	void fixed_update(double fixed_delta_seconds) override;
+    ~Character() override = default;
+    void fixed_update(double fixed_delta_seconds) override;
+    void submit_render_commands(std::vector<elysia::core::RenderCommand>& out_commands) const override = 0;
 
-	void submit_render_commands(std::vector<elysia::core::RenderCommand> &out_commands) const override;
+    [[nodiscard]] elysia::physics::BodyDefinition body_definition() const override;
+    [[nodiscard]] std::span<const elysia::physics::Collider> collider_definitions() const override;
+    [[nodiscard]] elysia::gameplay::collision::TeamId team() const noexcept { return _team; }
+    [[nodiscard]] Facing facing() const noexcept { return _facing; }
+    [[nodiscard]] float move_speed() const noexcept { return _move_speed; }
 
-	[[nodiscard]] elysia::physics::BodyDefinition body_definition() const override;
-	[[nodiscard]] std::span<const elysia::physics::Collider> collider_definitions() const override;
+protected:
+    Character(elysia::core::Vector2 start_position, elysia::core::Vector2 size,
+              elysia::core::Rect local_collision_rect, float move_speed,
+              elysia::gameplay::collision::TeamId team) noexcept;
+    void set_move_direction(elysia::core::Vector2 direction) noexcept;
 
 private:
-	elysia::physics::Collider _body_collider;
-
-	bool _facing_left = false;
-	// elysia::gameplay::collision::TeamId team = elysia::gameplay::collision::teams::Neutral;
-	//  elysia::core::Vector2 _desired_velocity = elysia::core::Vector2::zero();
-	elysia::core::Rect _collision_rect{};
-	float _move_speed = 240.0f;
-	float _hp = 100.0f;
-	bool _is_dead = false;
+    elysia::physics::Collider _body_collider;
+    elysia::core::Vector2 _move_direction{};
+    Facing _facing = Facing::Right;
+    float _move_speed;
+    elysia::gameplay::collision::TeamId _team;
 };

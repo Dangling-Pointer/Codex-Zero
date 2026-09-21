@@ -1,7 +1,7 @@
 #include "game_scene.h"
 
 #include "../characters/player_character.h"
-#include "../characters/character.h"
+#include "../characters/enemy.h"
 #include "../map/dungeon_room.h"
 
 #include "scene_keys.h"
@@ -29,7 +29,7 @@ void GameScene::on_enter(const elysia::scene::ScenePayload &payload)
         _room->center() - elysia::core::Vector2{32.0f, 32.0f});
 
     // test character
-    (void)create_and_add_object<Character>(_room->center());
+    _enemy = create_and_add_object<Enemy>(_room->center());
 
     constexpr auto slot = elysia::camera::CameraSlot::Main;
     ELYSIA_CAMERA->set_follow_strategy(
@@ -85,6 +85,9 @@ std::optional<elysia::core::Rect> GameScene::resolve_camera_focus_rect() const
 
 void GameScene::clear_room() noexcept
 {
+    if (_enemy)
+        _enemy->destroy();
+    _enemy = nullptr;
     _projectiles.unbind_scene();
     if (_player)
         _player->destroy();

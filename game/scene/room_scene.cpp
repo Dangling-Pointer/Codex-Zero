@@ -1,7 +1,7 @@
 #include "room_scene.h"
 
 #include "../characters/player_character.h"
-#include "../characters/character.h"
+#include "../characters/enemy.h"
 
 #include "scene_keys.h"
 
@@ -69,7 +69,7 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload &payload)
         elysia::core::Vector2{(kRoomColumns * kTileSize - 64.0f) * 0.5f,
                               (kRoomRows * kTileSize - 64.0f) * 0.5f});
 
-    (void)create_and_add_object<Character>(elysia::core::Vector2{100, 100});
+    _enemy = create_and_add_object<Enemy>(elysia::core::Vector2{100, 100});
 
     ELYSIA_DEBUG_DRAW->set_enabled(true);
     ELYSIA_DEBUG_DRAW->set_enabled_categories(elysia::tools::DebugDrawCategory::All);
@@ -105,6 +105,9 @@ std::optional<elysia::core::Rect> RoomScene::resolve_camera_focus_rect() const
 
 void RoomScene::clear_room() noexcept
 {
+    if (_enemy)
+        _enemy->destroy();
+    _enemy = nullptr;
     if (_player)
         _player->destroy();
     if (_room_boundary)
