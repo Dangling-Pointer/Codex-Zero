@@ -1,5 +1,6 @@
 #include "game/characters/player_character.h"
 #include "game/characters/enemy.h"
+#include "game/combat/collision/combat_collision_categories.h"
 #include "game/scene/game_scene.h"
 #include "engine/gameplay/input/gameplay_input_map.h"
 #include "engine/core/render/render_command.h"
@@ -58,6 +59,16 @@ void definitions()
         const auto& collider = character->collider_definitions()[0];
         check(collider.response == elysia::physics::CollisionResponse::Block
             && collider.material.friction == 0 && collider.material.restitution == 0, "common material");
+        const auto expected_projectile = character->team() == elysia::gameplay::collision::teams::Enemy
+            ? game::collision::categories::PlayerAttack
+            : game::collision::categories::EnemyAttack;
+        const auto other_projectile = character->team() == elysia::gameplay::collision::teams::Enemy
+            ? game::collision::categories::EnemyAttack
+            : game::collision::categories::PlayerAttack;
+        check((collider.filter.mask & expected_projectile) != 0
+            && (collider.filter.mask & other_projectile) == 0
+            && (collider.filter.mask & game::collision::categories::NeutralAttack) != 0,
+            "projectile target filtering");
         const auto body = character->body_definition();
         check(body.type == elysia::physics::BodyType::Dynamic && body.gravity_scale == 0
             && body.fixed_rotation && !body.enable_sleep && body.linear_damping == 0, "common body");
@@ -69,6 +80,11 @@ void definitions()
     commands.clear();
     enemy.submit_render_commands(commands);
     check(commands.size() == 1 && commands[0].command_rect == enemy.render_rect(), "enemy render bounds");
+    check(player.collider_definitions()[0].filter.category
+            == game::collision::categories::Player
+        && enemy.collider_definitions()[0].filter.category
+            == game::collision::categories::Enemy,
+        "character collision categories");
 }
 
 void movement()

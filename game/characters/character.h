@@ -2,6 +2,7 @@
 
 #include "engine/core/game_object.h"
 #include "engine/gameplay/collision/gameplay_collision_types.h"
+#include "game/combat/collision/combat_collision_categories.h"
 #include "engine/physics/contracts/physics_participant.h"
 #include "engine/physics/contracts/physics_step_participant.h"
 

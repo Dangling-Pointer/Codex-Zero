@@ -1,14 +1,26 @@
 #include "projectile.h"
 
+#include "game/combat/collision/combat_collision_categories.h"
+
 Projectile::Projectile(
     elysia::core::Vector2 start_position, elysia::core::Vector2 start_size,
-    elysia::core::Vector2 start_velocity) noexcept
+    elysia::core::Vector2 start_velocity,
+    game::collision::categories::CollisionBits collision_category) noexcept
     : elysia::core::GameObject(elysia::core::DepthLayer::Item), _velocity(start_velocity)
 {
     start_size.x = std::max(1.0f, start_size.x);
     start_size.y = std::max(1.0f, start_size.y);
     set_world_rect(elysia::core::Rect::from_center(start_position, start_size));
     _collider.shape = elysia::physics::AabbShape{{0.0f, 0.0f, start_size.x, start_size.y}};
+    _collider.filter.category = collision_category;
+    _collider.filter.mask = game::collision::categories::World;
+    if (collision_category == game::collision::categories::PlayerAttack)
+        _collider.filter.mask |= game::collision::categories::Enemy;
+    else if (collision_category == game::collision::categories::EnemyAttack)
+        _collider.filter.mask |= game::collision::categories::Player;
+    else if (collision_category == game::collision::categories::NeutralAttack)
+        _collider.filter.mask |= game::collision::categories::Player
+            | game::collision::categories::Enemy;
     _collider.response = elysia::physics::CollisionResponse::Block;
 }
 

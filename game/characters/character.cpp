@@ -7,6 +7,23 @@ Character::Character(elysia::core::Vector2 start_position, elysia::core::Vector2
 {
     set_world_rect({start_position, render_size});
     _body_collider.shape = elysia::physics::AabbShape{collision_rect};
+
+
+    _body_collider.filter.category = team == elysia::gameplay::collision::teams::Enemy
+        ? game::collision::categories::Enemy
+        : team == elysia::gameplay::collision::teams::Player
+            ? game::collision::categories::Player
+            : game::collision::categories::World;
+    _body_collider.filter.mask = game::collision::categories::World
+        | game::collision::categories::Player
+        | game::collision::categories::Enemy
+        | game::collision::categories::NeutralAttack;
+    if (team == elysia::gameplay::collision::teams::Enemy)
+        _body_collider.filter.mask |= game::collision::categories::PlayerAttack;
+    else if (team == elysia::gameplay::collision::teams::Player)
+        _body_collider.filter.mask |= game::collision::categories::EnemyAttack;
+
+        
     _body_collider.response = elysia::physics::CollisionResponse::Block;
     _body_collider.material.friction = 0.0f;
     _body_collider.material.restitution = 0.0f;

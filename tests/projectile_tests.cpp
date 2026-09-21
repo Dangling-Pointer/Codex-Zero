@@ -4,6 +4,8 @@
 #include "game/combat/projectiles/bullet_behavior/bullet_behavior_context.h"
 #include "game/combat/projectiles/bullet_behavior/behavior_list.h"
 #include "game/combat/wand/wand.h"
+#include "game/combat/collision/combat_collision_categories.h"
+#include "game/characters/enemy.h"
 #include "game/characters/player_character.h"
 #include "game/scene/game_scene.h"
 #include "engine/scene/scene.h"
@@ -68,6 +70,47 @@ ShotDescriptor shot(float delay = 0)
     result.spawn_offset = {100, 0};
     result.bullet_attributes.starting_velocity = {50, 0};
     return result;
+}
+
+void projectile_collision_filter()
+{
+    TestScene scene;
+    auto* player_projectile = scene.create_and_add_object<Projectile>();
+    auto* enemy_projectile = scene.create_and_add_object<Projectile>(
+        elysia::core::Vector2{}, elysia::core::Vector2{1, 1}, elysia::core::Vector2{},
+        game::collision::categories::EnemyAttack);
+    auto* neutral_projectile = scene.create_and_add_object<Projectile>(
+        elysia::core::Vector2{}, elysia::core::Vector2{1, 1}, elysia::core::Vector2{},
+        game::collision::categories::NeutralAttack);
+    auto* player = scene.create_and_add_object<PlayerCharacter>(elysia::core::Vector2{100, 100});
+    auto* enemy = scene.create_and_add_object<Enemy>(elysia::core::Vector2{200, 100});
+    const auto& player_projectile_filter = player_projectile->collider_definitions()[0].filter;
+    const auto& enemy_projectile_filter = enemy_projectile->collider_definitions()[0].filter;
+    const auto& neutral_projectile_filter = neutral_projectile->collider_definitions()[0].filter;
+    const auto& player_filter = player->collider_definitions()[0].filter;
+    const auto& enemy_filter = enemy->collider_definitions()[0].filter;
+    check(player_projectile_filter.category == game::collision::categories::PlayerAttack
+        && enemy_projectile_filter.category == game::collision::categories::EnemyAttack,
+        "projectile collision categories");
+    check((player_projectile_filter.mask & game::collision::categories::Enemy) != 0
+        && (player_projectile_filter.mask & game::collision::categories::Player) == 0
+        && (player_projectile_filter.mask & game::collision::categories::PlayerAttack) == 0,
+        "player projectile target mask");
+    check((enemy_projectile_filter.mask & game::collision::categories::Player) != 0
+        && (enemy_projectile_filter.mask & game::collision::categories::Enemy) == 0
+        && (enemy_projectile_filter.mask & game::collision::categories::EnemyAttack) == 0,
+        "enemy projectile target mask");
+    check(neutral_projectile_filter.category == game::collision::categories::NeutralAttack
+        && (neutral_projectile_filter.mask & game::collision::categories::Player) != 0
+        && (neutral_projectile_filter.mask & game::collision::categories::Enemy) != 0
+        && (neutral_projectile_filter.mask & game::collision::categories::NeutralAttack) == 0,
+        "neutral projectile target mask");
+    check((player_filter.mask & game::collision::categories::EnemyAttack) != 0,
+        "player ignores projectiles");
+    check((player_filter.mask & game::collision::categories::NeutralAttack) != 0
+        && (enemy_filter.mask & game::collision::categories::PlayerAttack) != 0
+        && (enemy_filter.mask & game::collision::categories::NeutralAttack) != 0,
+        "enemy accepts projectiles");
 }
 
 class RecordFire final : public BulletBehavior
@@ -268,6 +311,7 @@ int main()
 {
     try
     {
+        projectile_collision_filter();
         timing_and_order();
         moving_and_destroyed_sources();
         validation_and_service();

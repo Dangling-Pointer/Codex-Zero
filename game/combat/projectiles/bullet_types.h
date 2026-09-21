@@ -1,5 +1,6 @@
 #pragma once
 #include "../../../engine/core/geometry/vector2.h"
+#include "../collision/combat_collision_categories.h"
 
 #include <functional>
 #include <vector>
@@ -8,6 +9,9 @@ class BulletBehaviorSet;
 
 struct Bullet_Attributes
 {
+    game::collision::categories::CollisionBits collision_category =
+        game::collision::categories::PlayerAttack;
+        
     float bullet_speed = 500.0f;
     float max_age = 20.0f;
 

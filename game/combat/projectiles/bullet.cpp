@@ -12,7 +12,8 @@ Bullet::Bullet(const Bullet_Attributes &bullet_attributes) noexcept
     : Projectile(
           bullet_attributes.start_position,
           bullet_attributes.bullet_size,
-          bullet_attributes.starting_velocity)
+          bullet_attributes.starting_velocity,
+          bullet_attributes.collision_category)
 {
     _texture = ELYSIA_RESOURCES->find_texture("bullet");
 

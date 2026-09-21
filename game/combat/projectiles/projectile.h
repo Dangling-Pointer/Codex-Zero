@@ -5,6 +5,7 @@
 #include "engine/physics/contracts/collision_listener.h"
 #include "engine/physics/contracts/physics_participant.h"
 #include "engine/physics/contracts/physics_step_participant.h"
+#include "game/combat/collision/combat_collision_categories.h"
 
 #include <algorithm>
 #include <span>
@@ -20,7 +21,9 @@ public:
     explicit Projectile(
         elysia::core::Vector2 start_position = {},
         elysia::core::Vector2 start_size = {1.0f, 1.0f},
-        elysia::core::Vector2 start_velocity = {}) noexcept;
+        elysia::core::Vector2 start_velocity = {},
+        game::collision::categories::CollisionBits collision_category =
+            game::collision::categories::PlayerAttack) noexcept;
 
     ~Projectile() override;
 
