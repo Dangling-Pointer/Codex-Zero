@@ -13,7 +13,7 @@ struct Bullet_Attributes
 
     elysia::core::Vector2 start_position{};
     elysia::core::Vector2 starting_velocity{};
-    elysia::core::Vector2 bullet_size = {24.0f, 24.0f};
+    elysia::core::Vector2 bullet_size = {12.0f, 12.0f};
 
     float damage = 100.0f;
 

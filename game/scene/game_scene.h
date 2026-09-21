@@ -1,6 +1,6 @@
 #pragma once
 #include "../../engine/gameplay/scene/gameplay_scene.h"
-
+#include "../combat/wand/wand.h"
 #include <optional>
 
 class PlayerCharacter;
@@ -27,4 +27,8 @@ private:
 private:
 	PlayerCharacter *_player = nullptr;
 	DungeonRoom *_room = nullptr;
+
+	// tmp
+	void fire_test_wand();
+	Wand _test_wand;
 };

@@ -5,7 +5,7 @@
 
 namespace
 {
-    constexpr float kPlayerSize = 64.0f;
+    constexpr float kPlayerSize = 32.0f;
     constexpr float kColliderWidth = kPlayerSize * 0.65f;
     constexpr float kColliderHeight = kPlayerSize * 0.38f;
     constexpr float kColliderLeft = (kPlayerSize - kColliderWidth) * 0.5f;

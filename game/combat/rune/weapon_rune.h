@@ -104,7 +104,7 @@ public:
 
         _bullet_attributes.bullet_speed = 600.0f;
         _bullet_attributes.max_age = 20.0f;
-        _bullet_attributes.bullet_size = {48.0f, 48.0f};
+        _bullet_attributes.bullet_size = {12.0f, 12.0f};
         _bullet_attributes.damage = 100.0f;
         _bullet_attributes.damage_cooldown_sec = 0.5f;
 
