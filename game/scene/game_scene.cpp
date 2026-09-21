@@ -19,24 +19,29 @@ void GameScene::on_enter(const elysia::scene::ScenePayload &payload)
     if (_player)
         return;
 
+    //bind projectile manager
     _projectiles.bind_scene(*this, physics_world());
     if (!ProjectileService::instance()->bind_manager(_projectiles))
         ELYSIA_LOG_ERROR("GameScene", "Cannot bind projectile service.");
 
     _room = create_and_add_object<DungeonRoom>();
-    (void)physics_world().set_tile_world(*_room);
+    if(!physics_world().set_tile_world(*_room))
+        ELYSIA_LOG_ERROR("GameScene", "Cannot set tile world.");
+
+    //add player to scene
     _player = create_and_add_object<PlayerCharacter>(
         _room->center() - elysia::core::Vector2{32.0f, 32.0f});
 
-    // test character
+    // test enemy
     _enemy = create_and_add_object<Enemy>(_room->center());
 
+    //config the camera
     constexpr auto slot = elysia::camera::CameraSlot::Main;
-    ELYSIA_CAMERA->set_follow_strategy(
-        slot, std::make_unique<elysia::camera::HardFollowStrategy>());
+    ELYSIA_CAMERA->set_follow_strategy(slot, std::make_unique<elysia::camera::HardFollowStrategy>());
     ELYSIA_CAMERA->set_zoom(slot, 2.0f);
     ELYSIA_CAMERA->set_center(slot, _player->center());
 
+    //config debug draw
     ELYSIA_DEBUG_DRAW->set_enabled(true);
     ELYSIA_DEBUG_DRAW->set_enabled_categories(elysia::tools::DebugDrawCategory::All);
 }
@@ -47,18 +52,24 @@ void GameScene::on_exit()
     clear_room();
 }
 
-void GameScene::reset() { clear_room(); }
+void GameScene::reset()
+{ 
+    clear_room();
+}
 
 void GameScene::on_update(double delta)
 {
+    //update schedule projectiles for fire
     if (!_paused)
         _projectiles.update(delta);
+
     elysia::gameplay::GameplayScene::on_update(delta);
 }
 
 void GameScene::on_input(const elysia::input::RawInputFrame &input,
                          const std::vector<elysia::input::RawInputEvent> &events)
 {
+    //all tmp input handling
     elysia::gameplay::GameplayScene::on_input(input, events);
     for (const elysia::input::RawInputEvent &event : events)
     {

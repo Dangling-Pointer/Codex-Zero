@@ -6,6 +6,9 @@
 #include "engine/physics/contracts/physics_step_participant.h"
 
 #include <span>
+//TODO:
+//// Replace direct input handling with controller-based input
+//// Fix character damping
 
 class Character : public elysia::core::GameObject,
                   public elysia::physics::PhysicsParticipant,
