@@ -2,7 +2,6 @@
 
 #include "../scene/scene_keys.h"
 #include "../scene/main_menu_scene.h"
-#include "../scene/room_scene.h"
 #include "../scene/game_scene.h"
 
 #include "../../engine/builtin/builtin_scene_keys.h"
@@ -45,7 +44,6 @@ elysia::application::ApplicationDescriptor GameModule::descriptor() const
 void GameModule::register_scenes(elysia::scene::SceneManager &scene_manager) const
 {
     scene_manager.register_game_scene<MainMenuScene>(MainMenu);
-    scene_manager.register_game_scene<RoomScene>(Room);
     scene_manager.register_game_scene<GameScene>(Game);
 }
 

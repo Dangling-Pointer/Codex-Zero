@@ -1,12 +1,12 @@
 #include "character.h"
 
-Character::Character(elysia::core::Vector2 start_position, elysia::core::Vector2 size,
-                     elysia::core::Rect local_collision_rect, float move_speed,
+Character::Character(elysia::core::Vector2 start_position, elysia::core::Vector2 render_size,
+                     elysia::core::Rect collision_rect, float move_speed,
                      elysia::gameplay::collision::TeamId team) noexcept
     : GameObject(elysia::core::DepthLayer::Character), _move_speed(move_speed), _team(team)
 {
-    set_world_rect({start_position, size});
-    _body_collider.shape = elysia::physics::AabbShape{local_collision_rect};
+    set_world_rect({start_position, render_size});
+    _body_collider.shape = elysia::physics::AabbShape{collision_rect};
     _body_collider.response = elysia::physics::CollisionResponse::Block;
     _body_collider.material.friction = 0.0f;
     _body_collider.material.restitution = 0.0f;

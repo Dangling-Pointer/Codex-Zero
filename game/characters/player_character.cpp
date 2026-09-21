@@ -5,15 +5,15 @@
 
 namespace
 {
-constexpr float kPlayerSize = 32.0f;
-constexpr float kColliderWidth = kPlayerSize * 0.65f;
-constexpr float kColliderHeight = kPlayerSize * 0.38f;
-constexpr float kColliderLeft = (kPlayerSize - kColliderWidth) * 0.5f;
-constexpr float kColliderTop = kPlayerSize - kColliderHeight;
+constexpr float kPlayerRenderSize = 32.0f;
+constexpr float kColliderWidth = kPlayerRenderSize * 0.65f;
+constexpr float kColliderHeight = kPlayerRenderSize * 0.38f;
+constexpr float kColliderLeft = (kPlayerRenderSize - kColliderWidth) * 0.5f;
+constexpr float kColliderTop = kPlayerRenderSize - kColliderHeight;
 }
 
 PlayerCharacter::PlayerCharacter(elysia::core::Vector2 start_position)
-    : Character(start_position, {kPlayerSize, kPlayerSize},
+    : Character(start_position, {kPlayerRenderSize, kPlayerRenderSize},
                 {kColliderLeft, kColliderTop, kColliderWidth, kColliderHeight},
                 kMoveSpeed, elysia::gameplay::collision::teams::Player)
 {
@@ -28,6 +28,7 @@ void PlayerCharacter::submit_render_commands(std::vector<elysia::core::RenderCom
 {
     out_commands.push_back(elysia::core::make_world_fill_rect_command(
         render_rect(), elysia::core::colors::blue_500));
+
     const auto& rect = render_rect();
     const bool facing_left = facing() == Facing::Left;
     const float marker_x = facing_left ? rect.left() : rect.right();

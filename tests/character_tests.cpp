@@ -1,7 +1,6 @@
 #include "game/characters/player_character.h"
 #include "game/characters/enemy.h"
 #include "game/scene/game_scene.h"
-#include "game/scene/room_scene.h"
 #include "engine/gameplay/input/gameplay_input_map.h"
 #include "engine/core/render/render_command.h"
 #include "engine/core/render/colors.h"
@@ -157,7 +156,6 @@ int main()
         definitions();
         movement();
         scene_lifecycle<GameScene>();
-        scene_lifecycle<RoomScene>();
         std::cout << "Character tests passed\n";
         return 0;
     }

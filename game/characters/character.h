@@ -20,19 +20,21 @@ public:
 
     [[nodiscard]] elysia::physics::BodyDefinition body_definition() const override;
     [[nodiscard]] std::span<const elysia::physics::Collider> collider_definitions() const override;
+
     [[nodiscard]] elysia::gameplay::collision::TeamId team() const noexcept { return _team; }
     [[nodiscard]] Facing facing() const noexcept { return _facing; }
     [[nodiscard]] float move_speed() const noexcept { return _move_speed; }
 
 protected:
-    Character(elysia::core::Vector2 start_position, elysia::core::Vector2 size,
-              elysia::core::Rect local_collision_rect, float move_speed,
+    Character(elysia::core::Vector2 start_position, elysia::core::Vector2 render_size,
+              elysia::core::Rect collision_rect, float move_speed,
               elysia::gameplay::collision::TeamId team) noexcept;
     void set_move_direction(elysia::core::Vector2 direction) noexcept;
 
 private:
     elysia::physics::Collider _body_collider;
     elysia::core::Vector2 _move_direction{};
+    elysia::core::Rect _render_rect{};
     Facing _facing = Facing::Right;
     float _move_speed;
     elysia::gameplay::collision::TeamId _team;

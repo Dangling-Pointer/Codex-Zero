@@ -4,5 +4,3 @@
 
 inline constexpr elysia::scene::SceneKey MainMenu = 2;
 inline constexpr elysia::scene::SceneKey Game = 3;
-
-inline constexpr elysia::scene::SceneKey Room = 998;
