@@ -1,9 +1,21 @@
 #include "character.h"
 
+#include <atomic>
+
+namespace
+{
+elysia::gameplay::collision::ActorId allocate_actor_id() noexcept
+{
+    static std::atomic<elysia::gameplay::collision::ActorId> next_id{1};
+    return next_id.fetch_add(1, std::memory_order_relaxed);
+}
+}
+
 Character::Character(elysia::core::Vector2 start_position, elysia::core::Vector2 render_size,
                      elysia::core::Rect collision_rect, float move_speed,
                      elysia::gameplay::collision::TeamId team) noexcept
-    : GameObject(elysia::core::DepthLayer::Character), _move_speed(move_speed), _team(team)
+    : GameObject(elysia::core::DepthLayer::Character),
+      _actor_id(allocate_actor_id()), _move_speed(move_speed), _team(team)
 {
     set_world_rect({start_position, render_size});
     _body_collider.shape = elysia::physics::AabbShape{collision_rect};

@@ -16,7 +16,7 @@ class Character : public elysia::core::GameObject,
                   public elysia::physics::PhysicsStepParticipant
 {
 public:
-    enum class Facing { Left, Right };
+    enum class Facing { Left, Right };   
 
     ~Character() override = default;
     void fixed_update(double fixed_delta_seconds) override;
@@ -26,6 +26,7 @@ public:
     [[nodiscard]] std::span<const elysia::physics::Collider> collider_definitions() const override;
 
     [[nodiscard]] elysia::gameplay::collision::TeamId team() const noexcept { return _team; }
+    [[nodiscard]] elysia::gameplay::collision::ActorId actor_id() const noexcept { return _actor_id; }
     [[nodiscard]] Facing facing() const noexcept { return _facing; }
     [[nodiscard]] float move_speed() const noexcept { return _move_speed; }
 
@@ -36,6 +37,8 @@ protected:
     void set_move_direction(elysia::core::Vector2 direction) noexcept;
 
 private:
+    elysia::gameplay::collision::ActorId _actor_id =
+        elysia::gameplay::collision::InvalidActorId;
     elysia::physics::Collider _body_collider;
     elysia::core::Vector2 _move_direction{};
     elysia::core::Rect _render_rect{};

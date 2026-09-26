@@ -117,6 +117,7 @@ void GameScene::fire_test_wand()
         return;
 
     const elysia::core::Vector2 direction{1.0f, 0.0f};
-    if (!ProjectileService::instance()->request_fire({_player, _test_wand.attack(direction)}))
+    if (!ProjectileService::instance()->request_fire({
+            _player->actor_id(), _player->physics_handle(), _test_wand.attack(direction)}))
         ELYSIA_LOG_WARN("GameScene", "Projectile fire request rejected.");
 }

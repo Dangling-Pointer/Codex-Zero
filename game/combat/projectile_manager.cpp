@@ -1,6 +1,7 @@
 #include "projectile_manager.h"
 #include "projectile_service.h"
 #include "projectiles/bullet.h"
+#include "../characters/character.h"
 #include "engine/scene/scene.h"
 #include "engine/tools/logger.h"
 
@@ -72,28 +73,22 @@ void ProjectileManager::clear()
 
 bool ProjectileManager::enqueue_fire_request(ProjectileFireRequest request)
 {
-    if (!is_bound() || !request.source || request.shots.empty()
+    if (!is_bound()
+        || request.source_actor == elysia::gameplay::collision::InvalidActorId
+        || !request.source_handle.is_valid() || request.shots.empty()
         || !std::ranges::all_of(request.shots, valid))
         return false;
 
-    // Compare addresses before dereferencing a caller's borrowed pointer.
-    bool present = false;
-    static_cast<const elysia::object_query::IGameObjectQueryRuntime&>(*_scene)
-        .visit_game_objects(elysia::core::DepthLayerMask::all(), [&](auto& object) {
-            present = &object == request.source;
-            return !present;
-        });
-    if (!present || request.source->is_destroyed())
-        return false;
-    const auto handle = _world->object_handle(*request.source);
-    if (!handle)
+    const ScheduledProjectile source_check{
+        request.source_actor, request.source_handle, {}, 0.0};
+    if (!source_alive(source_check))
         return false;
 
     _scheduled.reserve(_scheduled.size() + request.shots.size());
     for (auto& shot : request.shots)
     {
         const double due = _time + std::max(0.0, double(shot.spawn_delay_sec));
-        _scheduled.push_back({request.source, *handle, std::move(shot), due});
+        _scheduled.push_back({request.source_actor, request.source_handle, std::move(shot), due});
     }
     std::stable_sort(_scheduled.begin(), _scheduled.end(), [](const auto& a, const auto& b) {
         return a.due_time < b.due_time;
@@ -103,11 +98,23 @@ bool ProjectileManager::enqueue_fire_request(ProjectileFireRequest request)
 
 bool ProjectileManager::source_alive(const ScheduledProjectile& scheduled) const
 {
-    // Scene unregisters physics before releasing object storage. Never read the
-    // pointer until its original registration has been verified.
-    return _world->contains_object(scheduled.source_handle)
-        && !scheduled.source->is_destroyed()
-        && _world->object_handle(*scheduled.source) == scheduled.source_handle;
+    if (!_world->contains_object(scheduled.source_handle))
+        return false;
+
+    bool alive = false;
+    static_cast<const elysia::object_query::IGameObjectQueryRuntime&>(*_scene)
+        .visit_game_objects(elysia::core::DepthLayerMask::all(), [&](auto& object) {
+            const auto handle = _world->object_handle(object);
+            if (handle && *handle == scheduled.source_handle)
+            {
+                const auto* character = dynamic_cast<const Character*>(&object);
+                alive = character && character->actor_id() == scheduled.source_actor
+                    && !character->is_destroyed();
+                return false;
+            }
+            return true;
+        });
+    return alive;
 }
 
 void ProjectileManager::update(double delta_seconds)
@@ -133,7 +140,10 @@ void ProjectileManager::update(double delta_seconds)
 void ProjectileManager::spawn_projectile(ScheduledProjectile scheduled)
 {
     auto attributes = std::move(scheduled.shot.bullet_attributes);
-    attributes.start_position = scheduled.source->center() + scheduled.shot.spawn_offset;
+    const auto state = _world->body_state(scheduled.source_handle);
+    if (!state)
+        return;
+    attributes.start_position = state->position + scheduled.shot.spawn_offset;
     if (!finite(attributes.start_position))
         return;
     auto* projectile = _scene->create_and_add_object<Bullet>(attributes);

@@ -9,6 +9,7 @@
 #include "game/characters/player_character.h"
 #include "game/scene/game_scene.h"
 #include "engine/scene/scene.h"
+#include "engine/physics/physics_world.h"
 
 #include <cmath>
 #include <iostream>
@@ -60,7 +61,13 @@ struct Fixture
     TestScene scene;
     ProjectileManager manager;
     PlayerCharacter* source = scene.create_and_add_object<PlayerCharacter>(elysia::core::Vector2{100, 100});
+    elysia::gameplay::collision::ActorId source_actor = source->actor_id();
     Fixture() { manager.bind_scene(scene, scene.physics_world()); }
+
+    ProjectileFireRequest request(std::vector<ShotDescriptor> shots) const
+    {
+        return {source_actor, source->physics_handle(), std::move(shots)};
+    }
 };
 
 ShotDescriptor shot(float delay = 0)
@@ -134,8 +141,8 @@ void timing_and_order()
         });
         return s;
     };
-    check(f.manager.enqueue_fire_request({f.source, {marked(0.5f, 3), marked(0.25f, 1), marked(0.25f, 2)}}), "queue sequence");
-    check(f.manager.enqueue_fire_request({f.source, {marked(-1, 0)}}), "negative delay accepted");
+    check(f.manager.enqueue_fire_request(f.request({marked(0.5f, 3), marked(0.25f, 1), marked(0.25f, 2)})), "queue sequence");
+    check(f.manager.enqueue_fire_request(f.request({marked(-1, 0)})), "negative delay accepted");
     check(records.empty(), "submission must not spawn");
     f.manager.update(0);
     check(records == std::vector<int>{0}, "zero delay fires on next update");
@@ -152,21 +159,25 @@ void timing_and_order()
 void moving_and_destroyed_sources()
 {
     Fixture f;
-    check(f.manager.enqueue_fire_request({f.source, {shot(0.5f)}}), "moving source request");
-    f.source->set_position({300, 200});
+    check(f.manager.enqueue_fire_request(f.request({shot(0.5f)})), "moving source request");
+    const elysia::core::Vector2 moved_position{300.0f, 200.0f};
+    check(f.scene.physics_world().teleport_object(
+        f.source->physics_handle(),
+        moved_position),
+        "move source body");
     f.manager.update(0.5);
     auto bullets = objects<Bullet>(f.scene);
     check(bullets.size() == 1, "one moving-source bullet");
-    check(bullets[0]->center().distance_squared_to(f.source->center() + elysia::core::Vector2{100, 0}) < 0.001f, "spawn from current position");
+    check(bullets[0]->center().distance_squared_to(elysia::core::Vector2{400, 200}) < 0.001f, "spawn from current position");
     check(std::abs(bullets[0]->projectile_velocity().x - 50) < 0.001f, "preserve authored velocity");
-    check(f.manager.enqueue_fire_request({f.source, {shot(1)}}), "cancel request");
+    check(f.manager.enqueue_fire_request(f.request({shot(1)})), "cancel request");
     f.source->destroy();
     f.manager.update(0);
     check(f.manager.pending_count() == 0, "cancel immediately when marked destroyed");
     check(objects<Bullet>(f.scene).size() == 1, "existing bullet survives source");
 
     auto* source2 = f.scene.create_and_add_object<PlayerCharacter>(elysia::core::Vector2{500, 500});
-    check(f.manager.enqueue_fire_request({source2, {shot(1)}}), "deleted source request");
+    check(f.manager.enqueue_fire_request({source2->actor_id(), source2->physics_handle(), {shot(1)}}), "deleted source request");
     source2->destroy();
     f.scene.on_update(0); // Actually releases source storage before the queue sees it.
     f.manager.update(1);
@@ -182,28 +193,28 @@ void validation_and_service()
     Fixture other;
     check(!service->bind_manager(other.manager), "reject competing manager");
     check(!service->unbind_manager(other.manager), "wrong owner cannot detach");
-    check(!service->request_fire({f.source, {}}), "reject empty shots");
-    check(!service->request_fire({nullptr, {shot()}}), "reject null source");
-    check(!service->request_fire({other.source, {shot()}}), "reject other scene source");
+    check(!service->request_fire(f.request({})), "reject empty shots");
+    check(!service->request_fire({elysia::gameplay::collision::InvalidActorId, {}, {shot()}}), "reject invalid source");
+    check(!service->request_fire(other.request({shot()})), "reject other scene source");
     auto invalid = shot();
     invalid.spawn_delay_sec = std::numeric_limits<float>::quiet_NaN();
-    check(!service->request_fire({f.source, {shot(), invalid}}), "reject entire invalid request");
+    check(!service->request_fire(f.request({shot(), invalid})), "reject entire invalid request");
     check(f.manager.pending_count() == 0, "no partial enqueue");
     invalid = shot();
     invalid.bullet_attributes.starting_velocity.x = std::numeric_limits<float>::infinity();
-    check(!service->request_fire({f.source, {invalid}}), "reject infinite velocity");
-    check(service->request_fire({f.source, {shot(), shot(1)}}), "service accepts valid request");
+    check(!service->request_fire(f.request({invalid})), "reject infinite velocity");
+    check(service->request_fire(f.request({shot(), shot(1)})), "service accepts valid request");
     f.manager.update(std::numeric_limits<double>::quiet_NaN());
     check(objects<Bullet>(f.scene).empty(), "invalid delta ignored");
     f.manager.update(0);
     check(objects<Bullet>(f.scene).size() == 1, "service routes to manager");
     f.manager.unbind_scene();
     check(f.manager.pending_count() == 0 && objects<Bullet>(f.scene).empty(), "unbind clears live and queued bullets");
-    check(!service->request_fire({f.source, {shot()}}), "service detached");
+    check(!service->request_fire(f.request({shot()})), "service detached");
     f.scene.on_update(0);
     check(f.scene.physics_world().registered_object_count() == 1, "bullet physics removed");
     f.manager.bind_scene(f.scene, f.scene.physics_world());
-    check(f.manager.enqueue_fire_request({f.source, {shot()}}), "rebind usable");
+    check(f.manager.enqueue_fire_request(f.request({shot()})), "rebind usable");
     f.manager.update(0);
     check(objects<Bullet>(f.scene).size() == 1, "no old queue after rebind");
 }
@@ -220,7 +231,7 @@ void nested_wand()
     for (const auto& s : shots) { earliest = std::min(earliest, s.spawn_delay_sec); latest = std::max(latest, s.spawn_delay_sec); }
     for (const auto& s : shots) if (s.spawn_delay_sec == earliest) ++first;
     check(latest > earliest, "test wand has nested delayed shots");
-    check(f.manager.enqueue_fire_request({f.source, std::move(shots)}), "enqueue wand output");
+    check(f.manager.enqueue_fire_request(f.request(std::move(shots))), "enqueue wand output");
     f.manager.update(earliest);
     check(objects<Bullet>(f.scene).size() == first, "first wand batch only");
     f.manager.update(latest - earliest + 0.001);
@@ -287,9 +298,9 @@ void movement_and_wall_collision()
     auto s = shot();
     s.bullet_attributes.starting_velocity = {400, 0};
     s.bullet_attributes.behavior_appenders.push_back([](BulletBehaviorSet& set) {
-        set.add(std::make_unique<BounceBehavior>(1));
+        set.add(std::make_unique<BounceBehavior>(2));
     });
-    check(f.manager.enqueue_fire_request({f.source, {s}}), "queue wall test");
+    check(f.manager.enqueue_fire_request(f.request({s})), "queue wall test");
     f.manager.update(0);
     auto* bullet = objects<Bullet>(f.scene).front();
     const auto x = bullet->center().x;

@@ -1,13 +1,15 @@
 #pragma once
 
 #include "shot_descriptor.h"
-#include "engine/core/game_object.h"
+#include "engine/gameplay/collision/gameplay_collision_types.h"
+#include "engine/physics/physics_object_handle.h"
 
 #include <vector>
 
 struct ProjectileFireRequest
 {
-    // Borrowed only for submission; the manager validates scene membership.
-    const elysia::core::GameObject* source = nullptr;
+    elysia::gameplay::collision::ActorId source_actor =
+        elysia::gameplay::collision::InvalidActorId;
+    elysia::physics::PhysicsObjectHandle source_handle{};
     std::vector<ShotDescriptor> shots;
 };

@@ -45,6 +45,9 @@ void definitions()
     Enemy enemy({300, 400});
     check(player.team() == elysia::gameplay::collision::teams::Player, "player team");
     check(enemy.team() == elysia::gameplay::collision::teams::Enemy, "enemy team");
+    check(player.actor_id() != elysia::gameplay::collision::InvalidActorId
+        && enemy.actor_id() != elysia::gameplay::collision::InvalidActorId
+        && player.actor_id() != enemy.actor_id(), "character actor ids");
     check(near(player.move_speed(), 200) && near(enemy.move_speed(), 200), "move speeds");
     check(player.size() == elysia::core::Vector2{32, 32}, "player size retained");
     check(enemy.size() == elysia::core::Vector2{30, 30}, "enemy size retained");
