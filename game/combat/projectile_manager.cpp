@@ -109,7 +109,7 @@ bool ProjectileManager::source_alive(const ScheduledProjectile& scheduled) const
             {
                 const auto* character = dynamic_cast<const Character*>(&object);
                 alive = character && character->actor_id() == scheduled.source_actor
-                    && !character->is_destroyed();
+                    && !character->is_destroyed() && !character->is_dead();
                 return false;
             }
             return true;
@@ -146,7 +146,10 @@ void ProjectileManager::spawn_projectile(ScheduledProjectile scheduled)
     attributes.start_position = state->position + scheduled.shot.spawn_offset;
     if (!finite(attributes.start_position))
         return;
-    auto* projectile = _scene->create_and_add_object<Bullet>(attributes);
+    auto owned = std::make_unique<Bullet>(attributes);
+    owned->set_instigator(scheduled.source_actor);
+    auto* projectile = _scene->add_object(std::move(owned));
+    if (projectile && !projectile->is_destroyed()) projectile->initialize_fire();
     if (!projectile || !_world->contains_object(projectile->physics_handle()))
     {
         if (projectile)

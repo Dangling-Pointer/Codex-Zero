@@ -1,6 +1,8 @@
 #include "character.h"
 
 #include <atomic>
+#include <cmath>
+#include <stdexcept>
 
 namespace
 {
@@ -13,36 +15,40 @@ elysia::gameplay::collision::ActorId allocate_actor_id() noexcept
 
 Character::Character(elysia::core::Vector2 start_position, elysia::core::Vector2 render_size,
                      elysia::core::Rect collision_rect, float move_speed,
-                     elysia::gameplay::collision::TeamId team) noexcept
+                     elysia::gameplay::collision::TeamId team, float max_health,
+                     std::vector<elysia::core::Rect> hurt_boxes)
     : GameObject(elysia::core::DepthLayer::Character),
       _actor_id(allocate_actor_id()), _move_speed(move_speed), _team(team)
 {
+    if (!std::isfinite(max_health) || max_health <= 0)
+        throw std::invalid_argument("Character health must be finite and positive");
+    _max_health = _health = max_health;
     set_world_rect({start_position, render_size});
-    _body_collider.shape = elysia::physics::AabbShape{collision_rect};
-
-
-    _body_collider.filter.category = team == elysia::gameplay::collision::teams::Enemy
-        ? game::collision::categories::Enemy
-        : team == elysia::gameplay::collision::teams::Player
-            ? game::collision::categories::Player
-            : game::collision::categories::World;
-    _body_collider.filter.mask = game::collision::categories::World
-        | game::collision::categories::Player
-        | game::collision::categories::Enemy
-        | game::collision::categories::NeutralAttack;
-    if (team == elysia::gameplay::collision::teams::Enemy)
-        _body_collider.filter.mask |= game::collision::categories::PlayerAttack;
-    else if (team == elysia::gameplay::collision::teams::Player)
-        _body_collider.filter.mask |= game::collision::categories::EnemyAttack;
-
-        
-    _body_collider.response = elysia::physics::CollisionResponse::Block;
-    _body_collider.material.friction = 0.0f;
-    _body_collider.material.restitution = 0.0f;
+    using namespace game::collision::categories;
+    elysia::physics::Collider body;
+    body.shape = elysia::physics::AabbShape{collision_rect};
+    body.filter.category = team == elysia::gameplay::collision::teams::Enemy ? Enemy : Player;
+    body.filter.mask = World | Player | Enemy;
+    body.material.friction = 0;
+    body.material.restitution = 0;
+    _colliders.push_back(body);
+    if (hurt_boxes.empty()) hurt_boxes.push_back({{0, 0}, render_size});
+    for (auto rect : hurt_boxes)
+    {
+        elysia::physics::Collider hurt;
+        hurt.shape = elysia::physics::AabbShape{rect};
+        const bool enemy = team == elysia::gameplay::collision::teams::Enemy;
+        hurt.filter.category = enemy ? EnemyHurt : PlayerHurt;
+        hurt.filter.mask = (enemy ? PlayerAttack : EnemyAttack) | NeutralAttack;
+        hurt.response = elysia::physics::CollisionResponse::Overlap;
+        hurt.sensor_contributes_mass = false;
+        _colliders.push_back(hurt);
+    }
 }
 
 void Character::set_move_direction(elysia::core::Vector2 direction) noexcept
 {
+    if (_dead) return;
     _move_direction = direction.is_zero() ? elysia::core::Vector2{} : direction.normalized();
     if (_move_direction.x < 0.0f)
         _facing = Facing::Left;
@@ -53,7 +59,7 @@ void Character::set_move_direction(elysia::core::Vector2 direction) noexcept
 void Character::fixed_update(double fixed_delta_seconds)
 {
     (void)fixed_delta_seconds;
-    set_velocity(_move_direction * _move_speed);
+    set_velocity(_dead ? elysia::core::Vector2{} : _move_direction * _move_speed);
 }
 
 elysia::physics::BodyDefinition Character::body_definition() const
@@ -69,5 +75,36 @@ elysia::physics::BodyDefinition Character::body_definition() const
 
 std::span<const elysia::physics::Collider> Character::collider_definitions() const
 {
-    return std::span<const elysia::physics::Collider>(&_body_collider, 1);
+    return _colliders;
+}
+
+DamageResult Character::receive_attack(const AttackInfo& attack)
+{
+    if (_dead || is_destroyed() || !std::isfinite(attack.damage) || attack.damage < 0)
+        return {};
+    DamageResult result{true, std::min(_health, attack.damage), false};
+    _health -= result.health_lost;
+    if (_health == 0)
+    {
+        _dead = result.killed = true;
+        _move_direction = {};
+        set_velocity({});
+        for (std::size_t i = 0; i < _colliders.size(); ++i)
+        {
+            _colliders[i].enabled = false;
+            update_physics_collider(i, _colliders[i]);
+        }
+        on_death();
+    }
+    return result;
+}
+elysia::gameplay::collision::ActorCollisionRig Character::collision_rig() const
+{
+    elysia::gameplay::collision::ActorCollisionRig rig;
+    rig.owner = _actor_id;
+    rig.team = _team;
+    rig.body = physics_collider(0);
+    for (std::size_t i = 1; i < _colliders.size(); ++i)
+        rig.hurt_boxes.push_back(physics_collider(i));
+    return rig;
 }

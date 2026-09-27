@@ -12,10 +12,10 @@ constexpr float kColliderLeft = (kPlayerRenderSize - kColliderWidth) * 0.5f;
 constexpr float kColliderTop = kPlayerRenderSize - kColliderHeight;
 }
 
-PlayerCharacter::PlayerCharacter(elysia::core::Vector2 start_position)
+PlayerCharacter::PlayerCharacter(elysia::core::Vector2 start_position, float max_health)
     : Character(start_position, {kPlayerRenderSize, kPlayerRenderSize},
                 {kColliderLeft, kColliderTop, kColliderWidth, kColliderHeight},
-                kMoveSpeed, elysia::gameplay::collision::teams::Player)
+                kMoveSpeed, elysia::gameplay::collision::teams::Player, max_health)
 {
 }
 
@@ -27,7 +27,7 @@ void PlayerCharacter::on_gameplay_input_frame(const elysia::gameplay::GameplayIn
 void PlayerCharacter::submit_render_commands(std::vector<elysia::core::RenderCommand>& out_commands) const
 {
     out_commands.push_back(elysia::core::make_world_fill_rect_command(
-        render_rect(), elysia::core::colors::blue_500));
+        render_rect(), is_dead() ? elysia::core::colors::gray_500 : elysia::core::colors::blue_500));
 
     const auto& rect = render_rect();
     const bool facing_left = facing() == Facing::Left;

@@ -106,4 +106,13 @@ void GameplayScene::dispatch_events(const std::vector<elysia::input::ActionInput
         }
     }
 }
+
+//will be move down to engine next engine update
+void GameplayScene::on_scene_object_removing(elysia::core::SceneObject& object)
+{
+    std::erase_if(_frame_receivers, [&](const auto& entry) { return entry.object == &object; });
+    std::erase_if(_event_receivers, [&](const auto& entry) { return entry.object == &object; });
+    Scene::on_scene_object_removing(object);
+}
+
 }

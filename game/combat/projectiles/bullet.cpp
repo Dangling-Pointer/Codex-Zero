@@ -5,6 +5,7 @@
 #include "bullet_behavior/bullet_behavior_context.h"
 
 #include <cmath>
+#include <atomic>
 
 constexpr float kRadiansToDegrees = 57.29577951308232f;
 
@@ -15,6 +16,13 @@ Bullet::Bullet(const Bullet_Attributes &bullet_attributes) noexcept
           bullet_attributes.starting_velocity,
           bullet_attributes.collision_category)
 {
+    // Thread-safe ver of i++.
+    // Why thread-safe?
+    // No idea lol.
+    static std::atomic<elysia::gameplay::collision::AttackInstanceId> next{1};
+    _attack_instance = next.fetch_add(1, std::memory_order_relaxed);
+
+    //find textuer
     _texture = ELYSIA_RESOURCES->find_texture("bullet");
 
     _bullet_attributes = bullet_attributes;
@@ -24,7 +32,14 @@ Bullet::Bullet(const Bullet_Attributes &bullet_attributes) noexcept
         append_behavior(_behaviors);
     }
 
-        BulletBehaviorContext context{.bullet = *this};
+}
+
+//
+void Bullet::initialize_fire()
+{
+    if (_fired || is_destroyed()) return;
+    _fired = true;
+    BulletBehaviorContext context{.bullet = *this};
     _behaviors.on_fire(context);
 }
 

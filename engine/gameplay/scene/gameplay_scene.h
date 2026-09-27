@@ -25,6 +25,9 @@ protected:
     [[nodiscard]] bool gameplay_input_enabled() const noexcept { return _gameplay_input_enabled; }
     [[nodiscard]] elysia::input::InputActionMap& gameplay_input_map() noexcept { return _gameplay_input_map; }
     [[nodiscard]] const elysia::input::InputActionMap& gameplay_input_map() const noexcept { return _gameplay_input_map; }
+    
+    //will be move down to engine next engine update
+    void on_scene_object_removing(elysia::core::SceneObject& object) override;
     void on_scene_object_registered(elysia::core::SceneObject& object) override;
     [[nodiscard]] collision::GameplayCollisionRuntime& collision_runtime() noexcept
     {

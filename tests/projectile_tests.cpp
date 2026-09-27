@@ -1,3 +1,10 @@
+#include <cstdlib>
+#if defined(_MSC_VER) && defined(_DEBUG)
+#include <crtdbg.h>
+#define NOMINMAX
+#include <Windows.h>
+#undef near
+#endif
 #include "game/combat/projectile_manager.h"
 #include "game/combat/projectile_service.h"
 #include "game/combat/projectiles/bullet.h"
@@ -94,22 +101,22 @@ void projectile_collision_filter()
     const auto& player_projectile_filter = player_projectile->collider_definitions()[0].filter;
     const auto& enemy_projectile_filter = enemy_projectile->collider_definitions()[0].filter;
     const auto& neutral_projectile_filter = neutral_projectile->collider_definitions()[0].filter;
-    const auto& player_filter = player->collider_definitions()[0].filter;
-    const auto& enemy_filter = enemy->collider_definitions()[0].filter;
+    const auto& player_filter = player->collider_definitions()[1].filter;
+    const auto& enemy_filter = enemy->collider_definitions()[1].filter;
     check(player_projectile_filter.category == game::collision::categories::PlayerAttack
         && enemy_projectile_filter.category == game::collision::categories::EnemyAttack,
         "projectile collision categories");
-    check((player_projectile_filter.mask & game::collision::categories::Enemy) != 0
+    check((player_projectile_filter.mask & game::collision::categories::EnemyHurt) != 0
         && (player_projectile_filter.mask & game::collision::categories::Player) == 0
         && (player_projectile_filter.mask & game::collision::categories::PlayerAttack) == 0,
         "player projectile target mask");
-    check((enemy_projectile_filter.mask & game::collision::categories::Player) != 0
+    check((enemy_projectile_filter.mask & game::collision::categories::PlayerHurt) != 0
         && (enemy_projectile_filter.mask & game::collision::categories::Enemy) == 0
         && (enemy_projectile_filter.mask & game::collision::categories::EnemyAttack) == 0,
         "enemy projectile target mask");
     check(neutral_projectile_filter.category == game::collision::categories::NeutralAttack
-        && (neutral_projectile_filter.mask & game::collision::categories::Player) != 0
-        && (neutral_projectile_filter.mask & game::collision::categories::Enemy) != 0
+        && (neutral_projectile_filter.mask & game::collision::categories::PlayerHurt) != 0
+        && (neutral_projectile_filter.mask & game::collision::categories::EnemyHurt) != 0
         && (neutral_projectile_filter.mask & game::collision::categories::NeutralAttack) == 0,
         "neutral projectile target mask");
     check((player_filter.mask & game::collision::categories::EnemyAttack) != 0,
@@ -153,7 +160,7 @@ void timing_and_order()
     f.manager.update(0);
     check(records.size() == 4 && f.manager.pending_count() == 0, "exactly once");
     check(f.scene.physics_world().registered_object_count() == 5, "one physics registration per bullet");
-    check(f.scene.physics_world().registered_collider_count() == 5, "one collider per bullet");
+    check(f.scene.physics_world().registered_collider_count() == 6, "one collider per bullet");
 }
 
 void moving_and_destroyed_sources()
@@ -320,6 +327,23 @@ void movement_and_wall_collision()
 
 int main()
 {
+#if defined(_MSC_VER) && defined(_DEBUG)
+    _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+    _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+    _CrtSetReportHook([](int, char* message, int*) -> int {
+        std::cerr << message << std::flush;
+        std::_Exit(1);
+    });
+    _CrtSetReportHookW2(_CRT_RPTHOOK_INSTALL, [](int, wchar_t* message, int*) -> int {
+        char buffer[8192]{};
+        WideCharToMultiByte(CP_UTF8, 0, message, -1, buffer, sizeof(buffer), nullptr, nullptr);
+        std::cerr << buffer << std::flush;
+        std::_Exit(1);
+    });
+#endif
     try
     {
         projectile_collision_filter();
