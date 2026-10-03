@@ -84,7 +84,7 @@ DamageResult Character::receive_attack(const AttackInfo& attack)
         return {};
     DamageResult result{true, std::min(_health, attack.damage), false};
     _health -= result.health_lost;
-    if (_health == 0)
+    if (_health <= 0)
     {
         _dead = result.killed = true;
         _move_direction = {};
