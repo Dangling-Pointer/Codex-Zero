@@ -11,16 +11,18 @@ Projectile::Projectile(
     start_size.x = std::max(1.0f, start_size.x);
     start_size.y = std::max(1.0f, start_size.y);
     set_world_rect(elysia::core::Rect::from_center(start_position, start_size));
+
+    // Configure collider and collision filtering
     _collider.shape = elysia::physics::AabbShape{{0.0f, 0.0f, start_size.x, start_size.y}};
     _collider.filter.category = collision_category;
     _collider.filter.mask = game::collision::categories::World;
     if (collision_category == game::collision::categories::PlayerAttack)
-        _collider.filter.mask |= game::collision::categories::Enemy;
+        _collider.filter.mask |= game::collision::categories::EnemyHurt;
     else if (collision_category == game::collision::categories::EnemyAttack)
-        _collider.filter.mask |= game::collision::categories::Player;
+        _collider.filter.mask |= game::collision::categories::PlayerHurt;
     else if (collision_category == game::collision::categories::NeutralAttack)
-        _collider.filter.mask |= game::collision::categories::Player
-            | game::collision::categories::Enemy;
+        _collider.filter.mask |= game::collision::categories::PlayerHurt
+            | game::collision::categories::EnemyHurt;
     _collider.response = elysia::physics::CollisionResponse::Block;
 }
 
@@ -40,6 +42,7 @@ void Projectile::fixed_update(double fixed_delta_seconds)
     (void)fixed_delta_seconds;
 }
 
+//TODO:need some refactoring on Projectile::on_collision_event
 void Projectile::on_collision_event(
     const elysia::physics::CollisionEvent &event)
 {
@@ -54,6 +57,8 @@ void Projectile::on_collision_event(
     const auto &other = event.contact.pair.first == target
                             ? event.contact.pair.second
                             : event.contact.pair.first;
+    // Character contacts are routed once through CombatSystem's HitBox/HurtBox path
+    if (other.kind == elysia::physics::CollisionTargetKind::Collider) return;
     const bool handled = other.kind == elysia::physics::CollisionTargetKind::Collider
                              ? on_entity_collision(event)
                              : on_collision(event);

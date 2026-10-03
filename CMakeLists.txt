@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 3.24)
 project(CodexZero LANGUAGES C CXX)
 
+# Uncomment this line if you don't want to build the tests.
+#option(BUILD_TESTING "Build tests" OFF)
 include(CTest)
+
 add_subdirectory(thirdparty/box2d EXCLUDE_FROM_ALL)
 add_subdirectory(thirdparty/enet EXCLUDE_FROM_ALL  )
 
@@ -61,6 +64,14 @@ target_link_libraries(CodexZero PRIVATE game_lib)
 elysia_copy_sdl_runtime(CodexZero)
 
 if(BUILD_TESTING)
+    add_executable(collision_routing_tests tests/collision_routing_tests.cpp)
+    target_link_libraries(collision_routing_tests PRIVATE engine_lib)
+    elysia_copy_sdl_runtime(collision_routing_tests)
+    add_test(NAME collision_routing_tests COMMAND collision_routing_tests)
+    add_executable(combat_tests tests/combat_tests.cpp)
+    target_link_libraries(combat_tests PRIVATE game_lib)
+    elysia_copy_sdl_runtime(combat_tests)
+    add_test(NAME combat_tests COMMAND combat_tests)
     add_executable(projectile_tests tests/projectile_tests.cpp)
     target_link_libraries(projectile_tests PRIVATE game_lib)
     elysia_copy_sdl_runtime(projectile_tests)

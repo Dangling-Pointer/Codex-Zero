@@ -45,6 +45,9 @@ void definitions()
     Enemy enemy({300, 400});
     check(player.team() == elysia::gameplay::collision::teams::Player, "player team");
     check(enemy.team() == elysia::gameplay::collision::teams::Enemy, "enemy team");
+    check(player.actor_id() != elysia::gameplay::collision::InvalidActorId
+        && enemy.actor_id() != elysia::gameplay::collision::InvalidActorId
+        && player.actor_id() != enemy.actor_id(), "character actor ids");
     check(near(player.move_speed(), 200) && near(enemy.move_speed(), 200), "move speeds");
     check(player.size() == elysia::core::Vector2{32, 32}, "player size retained");
     check(enemy.size() == elysia::core::Vector2{30, 30}, "enemy size retained");
@@ -55,7 +58,7 @@ void definitions()
     check(e == elysia::core::Rect{0, 0, 30, 30}, "enemy collider aligned with visual");
     for (Character* character : {static_cast<Character*>(&player), static_cast<Character*>(&enemy)})
     {
-        check(character->collider_definitions().size() == 1, "single collider definition");
+        check(character->collider_definitions().size() == 2, "single collider definition");
         const auto& collider = character->collider_definitions()[0];
         check(collider.response == elysia::physics::CollisionResponse::Block
             && collider.material.friction == 0 && collider.material.restitution == 0, "common material");
@@ -65,9 +68,9 @@ void definitions()
         const auto other_projectile = character->team() == elysia::gameplay::collision::teams::Enemy
             ? game::collision::categories::EnemyAttack
             : game::collision::categories::PlayerAttack;
-        check((collider.filter.mask & expected_projectile) != 0
-            && (collider.filter.mask & other_projectile) == 0
-            && (collider.filter.mask & game::collision::categories::NeutralAttack) != 0,
+        check((character->collider_definitions()[1].filter.mask & expected_projectile) != 0
+            && (character->collider_definitions()[1].filter.mask & other_projectile) == 0
+            && (character->collider_definitions()[1].filter.mask & game::collision::categories::NeutralAttack) != 0,
             "projectile target filtering");
         const auto body = character->body_definition();
         check(body.type == elysia::physics::BodyType::Dynamic && body.gravity_scale == 0
@@ -93,7 +96,7 @@ void movement()
     auto* player = scene.create_and_add_object<PlayerCharacter>(elysia::core::Vector2{100, 100});
     auto* enemy = scene.create_and_add_object<Enemy>(elysia::core::Vector2{1000, 1000});
     check(scene.physics_world().registered_object_count() == 2
-        && scene.physics_world().registered_collider_count() == 2, "one registration per character");
+        && scene.physics_world().registered_collider_count() == 4, "one registration per character");
     auto input = [&](std::initializer_list<elysia::input::RawInputControl> keys) {
         elysia::input::RawInputFrame frame;
         for (auto key : keys) frame.state.set_pressed(key, true);
@@ -151,6 +154,10 @@ template<class T> void scene_lifecycle()
 int main()
 {
 #if defined(_MSC_VER) && defined(_DEBUG)
+    _set_invalid_parameter_handler([](const wchar_t* expression, const wchar_t* function, const wchar_t* file, unsigned line, uintptr_t) {
+        std::wcerr << L"Invalid parameter: " << (expression ? expression : L"?") << L" in " << (function ? function : L"?") << L" " << (file ? file : L"?") << L":" << line << std::endl;
+        std::_Exit(2);
+    });
     _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
     _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
     _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);

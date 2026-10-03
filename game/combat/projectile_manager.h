@@ -29,7 +29,8 @@ public:
 private:
     struct ScheduledProjectile
     {
-        const elysia::core::GameObject* source = nullptr;
+        elysia::gameplay::collision::ActorId source_actor =
+            elysia::gameplay::collision::InvalidActorId;
         elysia::physics::PhysicsObjectHandle source_handle{};
         ShotDescriptor shot{};
         double due_time = 0;

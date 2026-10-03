@@ -328,8 +328,15 @@ namespace elysia::scene
         }
     }
 
+    void Scene::on_scene_object_removing(elysia::core::SceneObject&) {}
+
     void Scene::remove_destroyed_objects()
     {
+        for (auto& layer : _object_layers)
+            for (auto& object : layer)
+                if (object && object->is_destroyed()) on_scene_object_removing(*object);
+        for (auto& object : _ui_roots)
+            if (object && object->is_destroyed()) on_scene_object_removing(*object);
         for (const PhysicsRegistrationEntry &entry : _physics_registrations)
         {
             if (entry.object && entry.object->is_destroyed())
