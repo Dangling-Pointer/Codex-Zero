@@ -1,5 +1,7 @@
 #include "main_menu_scene.h"
 #include "scene_keys.h"
+#include "room_scene_payload.h"
+#include "game/characters/character_manager.h"
 
 #include "../../engine/resources/resource_service.h"
 #include "../../engine/tools/logger.h"
@@ -152,6 +154,13 @@ void MainMenuScene::build_menu_buttons()
     ui_button->set_on_click([this]
         {
             ELYSIA_LOG_DEBUG("MainMenuScene", "game flow test button");
+            const auto context = CharacterManager::instance()->create_context("default_player");
+            if (!context)
+            {
+                ELYSIA_LOG_ERROR("MainMenuScene", "Cannot create default player context");
+                return;
+            }
+            Scene::request_scene_switch(CombatRoom, RoomScenePayload{*context, {}});
         });
     _main_menu_window->add_child(std::move(ui_button), { ._anchor = elysia::ui::UiLayoutAnchor::TopRight });
 
