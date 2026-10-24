@@ -4,6 +4,11 @@ Codex-Zero is an early-stage game project.
 
 Early prototype development took place in this repository:: [Project-Hail-Mary](https://github.com/ZacharyOllivierre/Project-Hail-Mary)
 
+## Engine & Documentation
+
+For engine APIs, usage guidelines, and gameplay development, refer to the [Elysia Engine User Guide](https://github.com/Akil0814/ElysiaEngine/blob/master/docs/en/user-guide/README.md).
+
+
 ## Licensing
 
 Project-authored source code, build files, tests, documentation, and editable
