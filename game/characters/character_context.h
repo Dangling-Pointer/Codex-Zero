@@ -4,8 +4,6 @@
 
 using CharacterId = std::string;
 
-// Owned, copyable state carried between rooms. Create new-run state through
-// CharacterManager; the default context does not identify a valid character.
 struct CharacterContext
 {
     CharacterId character_id;
