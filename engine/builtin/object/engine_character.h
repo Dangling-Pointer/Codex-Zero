@@ -3,7 +3,7 @@
 #include "../../animation/animation.h"
 #include "../../core/game_object.h"
 #include "../../core/interface/updatable.h"
-#include "../../input/contracts/raw_input_event_receiver.h"
+#include "../../gameplay/control/control_command.h"
 #include "../../physics/collision/collider.h"
 #include "../resources/builtin_resource_ids.h"
 
@@ -16,18 +16,21 @@
 namespace elysia::builtin
 {
 class EngineCharacter final : public elysia::core::GameObject,
-    public elysia::input::RawInputEventReceiver,
-    public elysia::core::Updatable
+                              public elysia::gameplay::ControlCommandReceiver,
+                              public elysia::core::Updatable
 {
 public:
     static constexpr float kMovementSpeed = 180.0f;
 
-    EngineCharacter();
+    explicit EngineCharacter(elysia::input::InputActionId movement_action);
     ~EngineCharacter() override = default;
 
     void update(double delta_seconds) override;
-    bool on_raw_input_event(
-        const elysia::input::RawInputEvent& event) override;
+    void on_control_command(const elysia::gameplay::ControlCommand &, double) override;
+    void on_control_cancelled(elysia::gameplay::InputCancelReason) override
+    {
+        clear_movement_input();
+    }
     void submit_render_commands(
         std::vector<elysia::core::RenderCommand>& out_commands) const override;
 
@@ -55,13 +58,6 @@ private:
     std::optional<elysia::core::Rect> _movement_bounds;
     elysia::core::SpriteFlip _flip = elysia::core::SpriteFlip::None;
     bool _is_moving = false;
-    bool _move_left_a = false;
-    bool _move_left_arrow = false;
-    bool _move_right_d = false;
-    bool _move_right_arrow = false;
-    bool _move_up_w = false;
-    bool _move_up_arrow = false;
-    bool _move_down_s = false;
-    bool _move_down_arrow = false;
+    elysia::input::InputActionId _movement_action;
 };
 }

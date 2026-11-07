@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <locale>
 #include <sstream>
 #include <vector>
 
@@ -64,6 +65,7 @@ void UiNumber::reset() noexcept
     _digit_spacing = 0.0f;
     _fixed_glyph_advance.reset();
     _target_height.reset();
+    _shrink_to_fit = false;
     _decimal_places = 0;
     _trim_trailing_zeros = true;
     _keep_decimal_point = false;
@@ -94,7 +96,6 @@ void UiNumber::submit_ui_render_commands(std::vector<elysia::core::UiRenderComma
     elysia::localization::LocalizationService* localization_service =
         ELYSIA_LOCALIZATION;
 
-    const UiResolvedTextStyle typography = resolve_ui_typography(_typography_role);
     elysia::localization::LocalizedTextStyle text_style;
     text_style.typography_role = _typography_role;
     text_style.font_source_override = _font_source_override;
@@ -143,14 +144,34 @@ void UiNumber::submit_ui_render_commands(std::vector<elysia::core::UiRenderComma
     if (layout.glyphs.empty())
         return;
 
+    float run_width = layout.width;
+    float run_height = layout.height;
+    float scale = 1.0f;
+    if (_shrink_to_fit)
+    {
+        // Fixed advances may overlap glyphs, so the cursor extent alone is insufficient.
+        for (const elysia::core::GlyphPlacement& placement : layout.glyphs)
+        {
+            run_width = std::max(run_width,placement.local_rect.right());
+            run_height = std::max(run_height,placement.local_rect.bottom());
+        }
+        if (!std::isfinite(run_width) || !std::isfinite(run_height)
+            || run_width <= 0.0f || run_height <= 0.0f)
+        {
+            return;
+        }
+        scale = std::min({ 1.0f,available_rect.width() / run_width,available_rect.height() / run_height });
+    }
+    const float render_width = run_width * scale;
+
     float origin_x = available_rect.x();
     switch (_horizontal_align)
     {
     case TextHorizontalAlign::Center:
-        origin_x = available_rect.center().x - layout.width * 0.5f;
+        origin_x = available_rect.center().x - render_width * 0.5f;
         break;
     case TextHorizontalAlign::Right:
-        origin_x = available_rect.right() - layout.width;
+        origin_x = available_rect.right() - render_width;
         break;
     case TextHorizontalAlign::Left:
     default:
@@ -163,28 +184,31 @@ void UiNumber::submit_ui_render_commands(std::vector<elysia::core::UiRenderComma
         if (placement.glyph_index >= textures.size())
             continue;
 
+        const float alignment_height = (_shrink_to_fit ? run_height : placement.local_rect.height()) * scale;
         float render_y = available_rect.y();
         switch (_vertical_align)
         {
         case TextVerticalAlign::Center:
-            render_y = available_rect.center().y - placement.local_rect.height() * 0.5f;
+            render_y = available_rect.center().y - alignment_height * 0.5f;
             break;
         case TextVerticalAlign::Bottom:
-            render_y = available_rect.bottom() - placement.local_rect.height();
+            render_y = available_rect.bottom() - alignment_height;
             break;
         case TextVerticalAlign::Top:
         default:
             render_y = available_rect.y();
             break;
         }
+        if (_shrink_to_fit)
+            render_y += placement.local_rect.y() * scale;
 
         elysia::core::UiRenderCommand command = elysia::core::make_ui_texture_command(
             textures[placement.glyph_index],
             elysia::core::Rect(
-                origin_x + placement.local_rect.x(),
+                origin_x + placement.local_rect.x() * scale,
                 render_y,
-                placement.local_rect.width(),
-                placement.local_rect.height()
+                placement.local_rect.width() * scale,
+                placement.local_rect.height() * scale
             )
         );
         apply_opacity(command);
@@ -194,13 +218,52 @@ void UiNumber::submit_ui_render_commands(std::vector<elysia::core::UiRenderComma
 
 void UiNumber::set_value(double value)
 {
+    if (!std::isfinite(value))
+    {
+        clear_value();
+        return;
+    }
+    if (const auto* current = std::get_if<double>(&_value); current && *current == value)
+        return;
     _value = value;
     notify_layout_parent_of_intrinsic_layout_invalidation();
 }
 
+void UiNumber::set_integer_value(std::int64_t value)
+{
+    if (const auto* current = std::get_if<std::int64_t>(&_value); current && *current == value)
+        return;
+    _value = value;
+    notify_layout_parent_of_intrinsic_layout_invalidation();
+}
+
+std::optional<std::int64_t> UiNumber::integer_value() const noexcept
+{
+    if (const auto* integer = std::get_if<std::int64_t>(&_value))
+        return *integer;
+    return std::nullopt;
+}
+
+void UiNumber::clear_value()
+{
+    if (!has_value())
+        return;
+    _value = std::monostate{};
+    notify_layout_parent_of_intrinsic_layout_invalidation();
+}
+
+bool UiNumber::has_value() const noexcept
+{
+    return !std::holds_alternative<std::monostate>(_value);
+}
+
 double UiNumber::value() const noexcept
 {
-    return _value;
+    if (const auto* floating = std::get_if<double>(&_value))
+        return *floating;
+    if (const auto* integer = std::get_if<std::int64_t>(&_value))
+        return static_cast<double>(*integer);
+    return 0.0;
 }
 
 void UiNumber::set_base_style(const UiNumberStyle& style) noexcept
@@ -342,6 +405,19 @@ void UiNumber::clear_target_height()
     notify_layout_parent_of_intrinsic_layout_invalidation();
 }
 
+void UiNumber::set_shrink_to_fit(bool enabled)
+{
+    if (_shrink_to_fit == enabled)
+        return;
+    _shrink_to_fit = enabled;
+    notify_layout_parent_of_intrinsic_layout_invalidation();
+}
+
+bool UiNumber::shrinks_to_fit() const noexcept
+{
+    return _shrink_to_fit;
+}
+
 void UiNumber::set_decimal_places(int decimal_places)
 {
     _decimal_places = std::max(0,decimal_places);
@@ -405,13 +481,27 @@ elysia::core::Rect UiNumber::content_rect() const noexcept
 
 std::string UiNumber::formatted_text() const
 {
-    double display_value = _value;
-    if (std::abs(display_value) < kNegativeZeroTolerance)
-        display_value = 0.0;
+    if (!has_value())
+        return "--";
 
-    std::ostringstream stream;
-    stream << std::fixed << std::setprecision(_decimal_places) << display_value;
-    std::string text = stream.str();
+    std::string text;
+    if (const auto* integer = std::get_if<std::int64_t>(&_value))
+    {
+        text = std::to_string(*integer);
+        if (_decimal_places > 0)
+            text += "." + std::string(static_cast<std::size_t>(_decimal_places),'0');
+    }
+    else
+    {
+        double display_value = std::get<double>(_value);
+        if (std::abs(display_value) < kNegativeZeroTolerance)
+            display_value = 0.0;
+
+        std::ostringstream stream;
+        stream.imbue(std::locale::classic());
+        stream << std::fixed << std::setprecision(_decimal_places) << display_value;
+        text = stream.str();
+    }
 
     if (_trim_trailing_zeros)
         text = trim_fractional_zeros(std::move(text),_keep_decimal_point);

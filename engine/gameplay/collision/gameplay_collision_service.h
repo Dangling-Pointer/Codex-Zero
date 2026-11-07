@@ -6,6 +6,8 @@
 
 #include <string_view>
 
+#define ELYSIA_GAMEPLAY_COLLISION (::elysia::gameplay::collision::GameplayCollisionService::instance())
+
 namespace elysia::gameplay::collision
 {
 class GameplayCollisionService final

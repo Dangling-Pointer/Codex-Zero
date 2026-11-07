@@ -2,7 +2,6 @@
 
 #include "builtin_asset_cache.h"
 #include "../../tools/singleton.h"
-#include "../audio/builtin_audio_player.h"
 
 #include <expected>
 #include <memory>
@@ -30,8 +29,7 @@ public:
     [[nodiscard]] std::expected<void, std::string> initialize(
         SDL_Renderer* renderer,
         const BuiltinAssetCatalog& catalog,
-        std::span<const int> point_sizes,
-        const elysia::audio::AudioSettings& audio_settings);
+        std::span<const int> point_sizes);
     void shutdown() noexcept;
 
     [[nodiscard]] bool is_initialized() const noexcept;
@@ -47,15 +45,6 @@ public:
     [[nodiscard]] std::unique_ptr<elysia::animation::Animation> create_animation(
         BuiltinAnimationId id) const;
 
-    [[nodiscard]] int play_sound(BuiltinSoundId id,int loops = 0) const;
-    [[nodiscard]] bool play_music(BuiltinMusicId id,int loops = -1) const;
-    void stop_music() const noexcept;
-
-    void set_master_volume(int volume) noexcept;
-    void set_music_volume(int volume) noexcept;
-    void set_sound_volume(int volume) noexcept;
-    [[nodiscard]] const elysia::audio::AudioSettings& audio_settings() const noexcept;
-
     [[nodiscard]] std::size_t texture_count() const noexcept;
     [[nodiscard]] std::size_t font_count() const noexcept;
     [[nodiscard]] std::size_t locale_count() const noexcept;
@@ -67,6 +56,5 @@ private:
     BuiltinResources() = default;
 
     BuiltinAssetCache _assets;
-    BuiltinAudioPlayer _audio;
 };
 }

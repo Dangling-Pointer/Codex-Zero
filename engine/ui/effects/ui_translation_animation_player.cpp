@@ -92,7 +92,7 @@ double UiTranslationAnimationPlayer::apply_easing(UiTranslationAnimationEasing e
     if (easing == UiTranslationAnimationEasing::Linear)
         return t;
 
-    constexpr double k_pi = 3.14159265358979323846;
-    return 0.5 - 0.5 * std::cos(k_pi * t);
+    constexpr double kPi = 3.14159265358979323846;
+    return 0.5 - 0.5 * std::cos(kPi * t);
 }
 }

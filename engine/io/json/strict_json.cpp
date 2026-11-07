@@ -98,6 +98,9 @@ std::expected<json,JsonFileFailure> load_strict_json(
     try
     {
         json result = json::parse(input,callback,true,true);
+        if (input.bad())
+            return std::unexpected(JsonFileFailure{
+                JsonFileError::ReadFailed,"JSON file could not be read.",path,{},{},origin});
         if (!duplicate.empty())
             return std::unexpected(JsonFileFailure{
                 JsonFileError::DuplicateProperty,
@@ -105,11 +108,17 @@ std::expected<json,JsonFileFailure> load_strict_json(
                 std::move(duplicate_pointer),origin});
         return result;
     }
-    catch (const std::exception& exception)
+    catch (const json::parse_error& exception)
     {
         return std::unexpected(JsonFileFailure{
-            JsonFileError::ParseFailed,
+            input.bad() ? JsonFileError::ReadFailed : JsonFileError::ParseFailed,
             "JSON parsing failed: " + std::string(exception.what()),path,{},{},origin});
+    }
+    catch (const json::out_of_range& exception)
+    {
+        // The parser reports external numeric overflow as out_of_range.
+        return std::unexpected(JsonFileFailure{
+            JsonFileError::ParseFailed,exception.what(),path,{},{},origin});
     }
 }
 }

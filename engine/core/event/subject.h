@@ -38,6 +38,19 @@ public:
     }
 
 protected:
+    // Fault delivery continues even if one observer cannot handle it.
+    template<typename NotifyFunc,typename FailureFunc>
+    void notify_observers_isolated(NotifyFunc&& notify_func,FailureFunc&& failure_func)
+    {
+        const auto observers_copy = _observers;
+        for (ObserverType* observer : observers_copy)
+        {
+            if (!observer) continue;
+            try { notify_func(*observer); }
+            catch (...) { failure_func(); }
+        }
+    }
+
     template<typename NotifyFunc>
     void notify_observers(NotifyFunc&& notify_func)
     {

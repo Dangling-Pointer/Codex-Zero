@@ -87,8 +87,6 @@ std::expected<void, std::string> BuiltinAssetCache::initialize(
         return std::unexpected(
         "Built-in asset cache initialization failed: renderer changed; shutdown is required first.");
 
-    try
-    {
         auto prepared = prepare(renderer, catalog, point_sizes);
         if (!prepared)
             return std::unexpected(prepared.error());
@@ -102,12 +100,6 @@ std::expected<void, std::string> BuiltinAssetCache::initialize(
         _music = std::move(prepared->music);
         _renderer = renderer;
         return {};
-    }
-    catch (const std::exception& error)
-    {
-        return std::unexpected(
-            std::string("Built-in asset cache initialization failed: ") + error.what());
-    }
 }
 
 void BuiltinAssetCache::shutdown() noexcept

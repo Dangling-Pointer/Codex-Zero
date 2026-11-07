@@ -1,14 +1,16 @@
 #include "user_config_service.h"
 
 #include <cmath>
+#include <type_traits>
 
 namespace elysia::config
 {
 namespace
 {
-[[nodiscard]] std::unexpected<UserConfigFailure> invalid(std::string setting,std::string message)
+[[nodiscard]] std::unexpected<UserConfigFailure> invalid(std::string setting,std::string message,
+    std::source_location origin = std::source_location::current())
 {
-    return std::unexpected(UserConfigFailure{UserConfigError::InvalidValue,std::move(setting),std::move(message)});
+    return std::unexpected(make_user_config_failure(UserConfigError::InvalidValue,std::move(setting),std::move(message),origin));
 }
 
 [[nodiscard]] bool is_volume(int value) noexcept { return value >= 0 && value <= 100; }
@@ -26,7 +28,7 @@ std::string_view UserConfig::language() const noexcept { return _current_setting
 std::expected<void,UserConfigFailure> UserConfig::require_handler(std::string_view setting) const
 {
     if (_change_handler) return {};
-    return std::unexpected(UserConfigFailure{UserConfigError::ChangeHandlerUnavailable,std::string(setting),"A runtime settings change handler is not registered."});
+    return std::unexpected(make_user_config_failure(UserConfigError::ChangeHandlerUnavailable,std::string(setting),"A runtime settings change handler is not registered."));
 }
 
 std::expected<void,UserConfigFailure> UserConfig::validate_snapshot(
@@ -68,6 +70,8 @@ std::expected<UserConfigApplyStatus,UserConfigFailure> UserConfig::apply_snapsho
         {
             if (!first_failure)
                 first_failure = result.error();
+            else
+                io::append_failure_context(first_failure->diagnostic,result.error().diagnostic);
             return continue_after_failure;
         }
         if (*result == UserConfigApplyStatus::PendingRestart)
@@ -200,8 +204,22 @@ UserConfigRuntimeState UserConfig::runtime_state() const
 }
 bool UserConfig::is_dirty() const noexcept { return _current_settings != _persisted_snapshot; }
 bool UserConfig::restart_required() const noexcept { return _vsync_restart_pending; }
-void UserConfig::initialize(const UserConfigData& settings) noexcept { _current_settings = settings; _persisted_snapshot = settings; _active_vsync = settings.vsync; _vsync_restart_pending = false; }
-void UserConfig::mark_persisted() noexcept { _persisted_snapshot = _current_settings; }
+void UserConfig::initialize(const UserConfigData& settings)
+{
+    UserConfigData current = settings;
+    UserConfigData persisted = settings;
+    static_assert(std::is_nothrow_move_assignable_v<UserConfigData>);
+    _current_settings = std::move(current);
+    _persisted_snapshot = std::move(persisted);
+    _change_handler = nullptr;
+    _active_vsync = settings.vsync;
+    _vsync_restart_pending = false;
+}
+void UserConfig::mark_persisted(UserConfigData&& prepared) noexcept
+{
+    static_assert(std::is_nothrow_move_assignable_v<UserConfigData>);
+    _persisted_snapshot = std::move(prepared);
+}
 void UserConfig::reset() noexcept { _current_settings = {}; _persisted_snapshot = {}; _change_handler = nullptr; _active_vsync = true; _vsync_restart_pending = false; }
 void UserConfig::register_change_handler(IUserConfigChangeHandler& handler) noexcept { _change_handler = &handler; }
 void UserConfig::unregister_change_handler(IUserConfigChangeHandler& handler) noexcept { if (_change_handler == &handler) _change_handler = nullptr; }

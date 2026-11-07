@@ -21,12 +21,7 @@ std::expected<ConfigManifest,ConfigLoadFailure> ConfigManifestLoader::load(
                 ConfigLoadError::DuplicateKey,json_failure.message,origin,origin,
                 json_failure.origin));
         }
-        const ConfigLoadError code = json_failure.code == elysia::io::JsonFileError::FileMissing
-            ? ConfigLoadError::FileMissing
-            : json_failure.code == elysia::io::JsonFileError::FilesystemAccess
-                ? ConfigLoadError::FilesystemAccess : ConfigLoadError::OpenFailed;
-        return std::unexpected(make_config_load_failure(code,json_failure.message,
-            ConfigOrigin{source,json_failure.json_pointer,{},{}},{},json_failure.origin));
+        return std::unexpected(config_failure_from_json(json_failure,ConfigOrigin{source,{},{},{}}));
     }
     const auto& root = *parsed;
     if (!root.is_object() || root.size() != 2 || !root.contains("schema_version") || !root.contains("configs"))

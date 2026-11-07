@@ -10,7 +10,6 @@ class GamepadInputTranslator : public InputTranslator
 {
 public:
     std::vector<RawInputEvent> translate_event(const SDL_Event& event) override;
-    void reset();
 
 private:
     void append_controller_button_events(

@@ -619,6 +619,20 @@ bool UiWindow::on_ui_input_event(const UiInputEvent& event)
         apply_scope_focus();
 
         const bool blocks_background_input = overlay->options.modal;
+        if (event.type == UiInputEventType::ActionPressed && event.action == UiAction::Cancel)
+        {
+            // A focused editor gets the first chance to end its local adjustment.
+            UiElement* const element = overlay->element;
+            const bool close_on_cancel = overlay->options.close_on_cancel;
+            if (!dispatch_to_overlay(*overlay,event) && close_on_cancel && is_live_child_element(element))
+                close_overlay(*element);
+            cleanup_destroyed_children();
+            prune_overlays();
+            prune_focus_scopes();
+            ensure_valid_scope_focus();
+            apply_scope_focus();
+            return true;
+        }
         if (should_close_overlay_from_event(*overlay,event))
         {
             close_overlay(*overlay->element);
@@ -670,6 +684,19 @@ bool UiWindow::on_ui_input_event(const UiInputEvent& event)
 
     if (OverlayEntry* overlay = active_overlay())
     {
+        if (event.type == UiInputEventType::ActionPressed && event.action == UiAction::Cancel)
+        {
+            UiElement* const element = overlay->element;
+            const bool close_on_cancel = overlay->options.close_on_cancel;
+            if (!dispatch_to_overlay(*overlay,event) && close_on_cancel && is_live_child_element(element))
+                close_overlay(*element);
+            cleanup_destroyed_children();
+            prune_overlays();
+            prune_focus_scopes();
+            ensure_valid_scope_focus();
+            apply_scope_focus();
+            return true;
+        }
         if (is_pointer_scroll_target_event(event))
             promote_scroll_target_at(*overlay->element,event.mouse_x,event.mouse_y);
         if (dispatch_gamepad_scroll_to_focused_containers(*overlay->element,event))
@@ -715,6 +742,14 @@ bool UiWindow::on_ui_input_event(const UiInputEvent& event)
 
     if (event.type == UiInputEventType::ActionPressed && event.action == UiAction::Cancel)
     {
+        if (dispatch_to_scope(_focused_scope,event))
+        {
+            cleanup_destroyed_children();
+            prune_focus_scopes();
+            ensure_valid_scope_focus();
+            apply_scope_focus();
+            return true;
+        }
         const UiWindowCancelCallback callback = _on_cancel;
         if (callback)
             callback();
@@ -736,7 +771,12 @@ bool UiWindow::on_ui_input_event(const UiInputEvent& event)
         else if (event.type == UiInputEventType::PointerPressed
             && event.device == elysia::input::InputDevice::Mouse
             && event.control == elysia::input::RawInputControl::MouseLeft)
+        {
             (void)set_focused_scope_internal(pointer_scope);
+            // Activate the new scope before its controls process the press.
+            // Otherwise its focus synchronization clears the button's pushed state.
+            apply_scope_focus();
+        }
 
         if (event.type == UiInputEventType::ActionPressed && is_navigation_action(event.action))
         {
@@ -752,7 +792,7 @@ bool UiWindow::on_ui_input_event(const UiInputEvent& event)
                 }
             }
         }
-        else if ((event.action == UiAction::Confirm)
+        else if ((event.action == UiAction::Confirm || event.action == UiAction::Cancel)
             && (event.type == UiInputEventType::ActionPressed || event.type == UiInputEventType::ActionReleased))
         {
             handled = dispatch_to_scope(_focused_scope,event);
@@ -1253,8 +1293,8 @@ void UiWindow::apply_overlay_placement(OverlayEntry& entry) noexcept
     const elysia::core::Rect bounds = content_rect();
     const elysia::core::Vector2 fallback = layout::clamp_size(entry.options.fallback_size);
     const elysia::core::Vector2 current = layout::clamp_size(entry.element->size());
-    const float width = current.x > elysia::core::Vector2::k_epsilon ? current.x : fallback.x;
-    const float height = current.y > elysia::core::Vector2::k_epsilon ? current.y : fallback.y;
+    const float width = current.x > elysia::core::Vector2::kEpsilon ? current.x : fallback.x;
+    const float height = current.y > elysia::core::Vector2::kEpsilon ? current.y : fallback.y;
 
     switch (entry.options.placement)
     {
@@ -1436,4 +1476,9 @@ bool UiWindow::uses_pointer_focus_policy(elysia::input::InputDevice device) noex
 
 }
 
-
+elysia::input::InputCapture elysia::ui::UiWindow::input_capture() const noexcept
+{
+    if (active_modal_overlay() || active_transient_popup())
+        return elysia::input::AllInputCapture;
+    return UiChildHost::input_capture();
+}

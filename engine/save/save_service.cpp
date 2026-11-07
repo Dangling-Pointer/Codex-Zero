@@ -14,14 +14,10 @@ SaveFailure failure(
     SaveError error,
     std::string_view save_name,
     std::string message,
-    std::string key = {})
+    std::string key = {},
+    std::source_location origin = std::source_location::current())
 {
-    return SaveFailure{
-        error,
-        std::string(save_name),
-        std::move(key),
-        std::move(message)
-    };
+    return make_save_failure(error,std::string(save_name),std::move(key),std::move(message),origin);
 }
 }
 

@@ -25,6 +25,8 @@ inline void log_published_termination(
     }
 
     logger->error(info->category,info->message,info->location);
+    if (info->category_truncated || info->message_truncated)
+        logger->error("termination","Termination record was truncated; consult the original failure log",info->location);
     const char* reason = info->reason == elysia::tools::TerminationReason::UnhandledException
         ? "Application terminating after an unhandled exception"
         : "Application terminating after a fatal runtime failure";

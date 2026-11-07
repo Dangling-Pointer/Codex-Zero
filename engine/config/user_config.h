@@ -38,8 +38,8 @@ public:
 
 private:
     friend class UserConfigService;
-    void initialize(const UserConfigData& settings) noexcept;
-    void mark_persisted() noexcept;
+    void initialize(const UserConfigData& settings);
+    void mark_persisted(UserConfigData&& prepared) noexcept;
     void reset() noexcept;
     void register_change_handler(IUserConfigChangeHandler& handler) noexcept;
     void unregister_change_handler(IUserConfigChangeHandler& handler) noexcept;

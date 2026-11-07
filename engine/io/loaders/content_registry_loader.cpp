@@ -1,4 +1,5 @@
 #include "content_registry_loader.h"
+#include "detail/content_registry_json_failure.h"
 
 #include "../json/json_loader.h"
 #include "../path/path_manager.h"
@@ -87,13 +88,7 @@ std::expected<ContentRegistry,ContentRegistryFailure> ContentRegistryLoader::loa
     const auto read = loader.open_file(registry_path);
     if (!read)
     {
-        ContentRegistryError code = ContentRegistryError::InvalidDocument;
-        if (read.error().code == JsonFileError::FileMissing)
-            code = ContentRegistryError::FileMissing;
-        else if (read.error().code == JsonFileError::FilesystemAccess)
-            code = ContentRegistryError::FilesystemAccess;
-        return std::unexpected(failure(code,read.error().message,registry_path,
-            read.error().json_pointer,registry_path,read.error().origin));
+        return std::unexpected(detail::registry_failure_from_json(read.error()));
     }
     if (!loader.root().is_object())
         return std::unexpected(failure(ContentRegistryError::InvalidDocument,

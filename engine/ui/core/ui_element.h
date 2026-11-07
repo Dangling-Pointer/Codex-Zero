@@ -1,4 +1,5 @@
 #pragma once
+#include "../../input/input_suppression.h"
 
 #include <cstdint>
 #include <vector>
@@ -10,8 +11,11 @@
 #include "../effects/ui_translation_animation_player.h"
 
 #include <optional>
+#include <memory>
 #include <string>
 #include <string_view>
+
+namespace elysia::scene { class SceneInputRouter; }
 
 namespace elysia::ui
 {
@@ -29,8 +33,10 @@ class UiElement : public elysia::core::SceneObject
 public:
 
     // Higher UI order values are rendered on top and receive input first.
-    explicit UiElement(const elysia::core::Rect& rect = elysia::core::Rect::zero(),int order = 0) 
-        noexcept : _screen_rect(rect), _order(order) {}
+  explicit UiElement(const elysia::core::Rect &rect = elysia::core::Rect::zero(), int order = 0) noexcept
+      : _screen_rect(rect), _order(order)
+  {
+  }
 
     UiElement( const elysia::core::Vector2& position, const elysia::core::Vector2& size, int order = 0)
         noexcept : _screen_rect(position, size), _order(order) {}
@@ -39,6 +45,13 @@ public:
         noexcept : _screen_rect(elysia::core::Rect::from_center(center, size)), _order(order) {}
 
     ~UiElement() override;
+    virtual void cancel_input_interaction()
+    {
+    }
+    [[nodiscard]] virtual elysia::input::InputCapture input_capture() const noexcept
+    {
+        return elysia::input::InputCapture::None;
+    }
 
     UiElement(const UiElement&) = delete;
     UiElement& operator=(const UiElement&) = delete;
@@ -175,6 +188,10 @@ protected:
 
 private:
     friend class UiChildHost;
+    friend class elysia::scene::SceneInputRouter;
+    // Created only for root cancellation snapshots; destruction invalidates all snapshots.
+    struct CancellationLifetime { UiElement* element = nullptr; };
+    std::shared_ptr<CancellationLifetime> _cancellation_lifetime;
 
     static std::uint8_t multiply_alpha(std::uint8_t a, std::uint8_t b) noexcept
     {

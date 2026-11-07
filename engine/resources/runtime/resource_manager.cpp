@@ -108,6 +108,11 @@ TTF_Font* elysia::resources::ResourceManager::find_font(std::string_view key) co
 	return _font_manager.find_font(key);
 }
 
+bool elysia::resources::ResourceManager::has_sound(std::string_view key) const
+{
+    return _audio_manager.has_sound(key);
+}
+
 MIX_Audio* elysia::resources::ResourceManager::find_sound(std::string_view key) const
 {
 	return _audio_manager.find_sound(key);

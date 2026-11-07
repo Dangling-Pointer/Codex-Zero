@@ -1,6 +1,8 @@
 #include "gameplay_collision_runtime.h"
+#include "../../tools/logger.h"
 
 #include <algorithm>
+#include <exception>
 #include <optional>
 
 namespace elysia::gameplay::collision
@@ -410,9 +412,18 @@ void GameplayCollisionRuntime::on_collision_event(
     }
     catch (...)
     {
+        const auto original = std::current_exception();
         _dispatching = false;
-        flush_listener_operations();
-        throw;
+        try { flush_listener_operations(); }
+        catch (const std::exception& error)
+        {
+            elysia::tools::Logger::instance()->error("collision_cleanup", error.what());
+        }
+        catch (...)
+        {
+            elysia::tools::Logger::instance()->error("collision_cleanup", "Unknown listener flush failure");
+        }
+        std::rethrow_exception(original);
     }
     _dispatching = false;
     flush_listener_operations();
@@ -420,14 +431,19 @@ void GameplayCollisionRuntime::on_collision_event(
 
 void GameplayCollisionRuntime::flush_listener_operations()
 {
-    for (const auto& [listener, add] : _pending_listener_operations)
-    {
-        const auto found = std::ranges::find(_listeners, listener);
-        if (add && found == _listeners.end())
-            _listeners.push_back(listener);
-        else if (!add && found != _listeners.end())
-            _listeners.erase(found);
-    }
+    if (_pending_listener_operations.empty())
+        return;
+    auto pending = std::move(_pending_listener_operations);
     _pending_listener_operations.clear();
+    auto next = _listeners;
+    for (const auto& [listener, add] : pending)
+    {
+        const auto found = std::ranges::find(next, listener);
+        if (add && found == next.end())
+            next.push_back(listener);
+        else if (!add && found != next.end())
+            next.erase(found);
+    }
+    _listeners.swap(next);
 }
 }

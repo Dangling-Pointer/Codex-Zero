@@ -207,20 +207,6 @@ bool UiChromeContainer::on_ui_input_event(const UiInputEvent& event)
         const bool route_to_header = targets_header && event.type != UiInputEventType::PointerReleased;
         if (!route_to_header)
         {
-            if (event.type == UiInputEventType::ActionPressed
-                && event.action == UiAction::NavigateUp
-                && !body_scope->can_navigate(UiAction::NavigateUp)
-                && header_has_focusable_target())
-            {
-                const bool left_body_scope = leave_body_scope();
-                cleanup_destroyed_children();
-                refresh_focus_registry();
-                ensure_valid_focus();
-                sync_body_scope_focus();
-                apply_focus_state();
-                return left_body_scope;
-            }
-
             const bool should_dispatch_to_body = event.device != elysia::input::InputDevice::Mouse
                 || targets_body
                 || event.type == UiInputEventType::MouseMoved
@@ -236,6 +222,14 @@ bool UiChromeContainer::on_ui_input_event(const UiInputEvent& event)
             cleanup_destroyed_children();
             refresh_focus_registry();
             ensure_valid_focus();
+            body_scope = delegated_body_scope();
+            if (!handled && body_scope && event.type == UiInputEventType::ActionPressed
+                && event.action == UiAction::NavigateUp
+                && !body_scope->can_navigate(UiAction::NavigateUp)
+                && header_has_focusable_target())
+            {
+                handled = leave_body_scope();
+            }
             sync_body_scope_focus();
             apply_focus_state();
             return handled;

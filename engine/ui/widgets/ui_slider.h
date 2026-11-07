@@ -75,6 +75,10 @@ namespace elysia::ui
         UiSlider(const elysia::core::Vector2& center,const elysia::core::Vector2& size,UiFromCenterTag,const UiSliderConfig& config,int order = 0) noexcept;
         ~UiSlider() override = default;
 
+        void cancel_input_interaction() noexcept override
+        {
+            clear_drag_state();
+        }
         void reset() noexcept override;
         void set_enabled(bool enabled) override;
         void set_focused(bool focused) override;

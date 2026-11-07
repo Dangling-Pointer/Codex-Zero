@@ -5,6 +5,7 @@
 
 #include "render_command.h"
 #include "sdl_convert.h"
+#include "sdl_render_boundary.h"
 #include "sdl_ui_stroke_renderer.h"
 
 #include <cmath>
@@ -56,9 +57,9 @@ inline void execute_textured_render_command(
     double rotation_degrees,
     const Vector2& rotation_origin,
     SpriteFlip flip
-) noexcept
+)
 {
-    if (!renderer || !texture)
+    if (!texture)
         return;
 
     SDL_FRect destination_rect = to_sdl_frect(to_sdl_rect(destination_rect_value));
@@ -75,50 +76,22 @@ inline void execute_textured_render_command(
         src_rect = &converted_src_rect;
     }
 
-    std::uint8_t previous_alpha = 255;
-    SDL_GetTextureAlphaMod(texture, &previous_alpha);
-    SDL_SetTextureAlphaMod(texture, alpha);
-    std::uint8_t previous_red = 255;
-    std::uint8_t previous_green = 255;
-    std::uint8_t previous_blue = 255;
-    if (texture_color_modulation)
-    {
-        SDL_GetTextureColorMod(
-            texture,
-            &previous_red,
-            &previous_green,
-            &previous_blue);
-        SDL_SetTextureColorMod(
-            texture,
-            texture_color_modulation->r,
-            texture_color_modulation->g,
-            texture_color_modulation->b);
-    }
-
-    SDL_RenderTextureRotated(
-        renderer,
-        texture,
-        src_rect,
-        &destination_rect,
-        rotation_degrees,
-        &sdl_rotation_origin,
-        to_sdl_renderer_flip(flip)
-    );
-
-    if (texture_color_modulation)
-    {
-        SDL_SetTextureColorMod(
-            texture,
-            previous_red,
-            previous_green,
-            previous_blue);
-    }
-    SDL_SetTextureAlphaMod(texture, previous_alpha);
+    detail::TextureState state(texture,texture_color_modulation.has_value());
+    detail::with_render_state(state,[&] {
+        state.set_alpha(alpha);
+        if (texture_color_modulation)
+            state.set_color(texture_color_modulation->r,texture_color_modulation->g,texture_color_modulation->b);
+        detail::checked_render_operation("SDL_RenderTextureRotated",[&] {
+            return SDL_RenderTextureRotated(renderer,texture,src_rect,&destination_rect,
+                rotation_degrees,&sdl_rotation_origin,to_sdl_renderer_flip(flip));
+        });
+    });
 }
 
-inline void execute_render_command(
-    SDL_Renderer* renderer,
-    const UiRenderCommand& render_command) noexcept;
+namespace detail
+{
+inline void execute_render_command_impl(SDL_Renderer* renderer,const UiRenderCommand& render_command);
+}
 
 [[nodiscard]] inline bool finite_render_vector(const Vector2& value) noexcept
 {
@@ -136,52 +109,23 @@ namespace detail
 {
 inline void execute_world_fill_rect_command(
     SDL_Renderer* renderer,
-    const ScreenRenderCommand& render_command) noexcept
+    const ScreenRenderCommand& render_command)
 {
     if (!renderer || !valid_render_rect(render_command.screen_rect))
         return;
 
-    SDL_Rect previous_clip_rect{};
-    const bool had_clip_rect = SDL_RenderClipEnabled(renderer) == true;
-    if (had_clip_rect)
-    {
-        SDL_GetRenderClipRect(renderer,&previous_clip_rect);
-        SDL_SetRenderClipRect(renderer,nullptr);
-    }
-
-    SDL_BlendMode previous_blend_mode = SDL_BLENDMODE_NONE;
-    std::uint8_t previous_red = 0;
-    std::uint8_t previous_green = 0;
-    std::uint8_t previous_blue = 0;
-    std::uint8_t previous_alpha = 0;
-    SDL_GetRenderDrawBlendMode(renderer,&previous_blend_mode);
-    SDL_GetRenderDrawColor(
-        renderer,
-        &previous_red,
-        &previous_green,
-        &previous_blue,
-        &previous_alpha);
-
-    const SDL_Color color = to_sdl_color(render_command.color);
-    SDL_FRect rect = to_sdl_frect(render_command.screen_rect);
-    constexpr float k_edge_bias = 0.001f;
-    // SDL's float fill path can still round nearly integral extents down.
-    // A subpixel overlap keeps shared world-cell boundaries covered.
-    rect.w += k_edge_bias;
-    rect.h += k_edge_bias;
-    SDL_SetRenderDrawBlendMode(renderer,SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(renderer,color.r,color.g,color.b,color.a);
-    SDL_RenderFillRect(renderer,&rect);
-
-    SDL_SetRenderDrawColor(
-        renderer,
-        previous_red,
-        previous_green,
-        previous_blue,
-        previous_alpha);
-    SDL_SetRenderDrawBlendMode(renderer,previous_blend_mode);
-    if (had_clip_rect)
-        SDL_SetRenderClipRect(renderer,&previous_clip_rect);
+    RendererState state(renderer);
+    with_render_state(state,[&] {
+        state.set_clip(nullptr);
+        state.set_blend(SDL_BLENDMODE_BLEND);
+        state.set_color(to_sdl_color(render_command.color));
+        SDL_FRect rect = to_sdl_frect(render_command.screen_rect);
+        // Preserve the shared-cell coverage bias.
+        constexpr float kEdgeBias = 0.001f;
+        rect.w += kEdgeBias;
+        rect.h += kEdgeBias;
+        checked_render_operation("SDL_RenderFillRect",[&] { return SDL_RenderFillRect(renderer,&rect); });
+    });
 }
 }
 
@@ -199,29 +143,21 @@ inline void execute_world_fill_rect_command(
     const float twice_signed_area =
         (vertices[1] - vertices[0]).cross(vertices[2] - vertices[0]);
     return std::isfinite(twice_signed_area)
-        && std::fabs(twice_signed_area) > Vector2::k_epsilon;
+        && std::fabs(twice_signed_area) > Vector2::kEpsilon;
 }
 
 inline void execute_filled_triangle_render_command(
     SDL_Renderer* renderer,
     const ScreenRenderCommand& render_command
-) noexcept
+)
 {
     if (!renderer || !valid_render_triangle(render_command.triangle_vertices))
         return;
 
-    SDL_Rect previous_clip_rect{};
-    const bool had_clip_rect = SDL_RenderClipEnabled(renderer) == true;
-    if (had_clip_rect)
-    {
-        SDL_GetRenderClipRect(renderer,&previous_clip_rect);
-        SDL_SetRenderClipRect(renderer,nullptr);
-    }
-
-    SDL_BlendMode previous_blend_mode = SDL_BLENDMODE_NONE;
-    SDL_GetRenderDrawBlendMode(renderer,&previous_blend_mode);
-    SDL_SetRenderDrawBlendMode(renderer,SDL_BLENDMODE_BLEND);
-
+    detail::RendererState state(renderer);
+    detail::with_render_state(state,[&] {
+    state.set_clip(nullptr);
+    state.set_blend(SDL_BLENDMODE_BLEND);
     const SDL_Color color = to_sdl_color(render_command.color);
     const std::array<SDL_Vertex,3> vertices{
         SDL_Vertex{ SDL_FPoint{ render_command.triangle_vertices[0].x,
@@ -231,14 +167,15 @@ inline void execute_filled_triangle_render_command(
         SDL_Vertex{ SDL_FPoint{ render_command.triangle_vertices[2].x,
                                 render_command.triangle_vertices[2].y },to_sdl_fcolor(color),SDL_FPoint{} }
     };
-    SDL_RenderGeometry(
-        renderer,nullptr,vertices.data(),static_cast<int>(vertices.size()),nullptr,0);
-    SDL_SetRenderDrawBlendMode(renderer,previous_blend_mode);
-    if (had_clip_rect)
-        SDL_SetRenderClipRect(renderer,&previous_clip_rect);
+    detail::checked_render_operation("SDL_RenderGeometry",[&] {
+        return SDL_RenderGeometry(renderer,nullptr,vertices.data(),static_cast<int>(vertices.size()),nullptr,0);
+    });
+    });
 }
 
-inline void execute_render_command(SDL_Renderer* renderer, const ScreenRenderCommand& render_command) noexcept
+namespace detail
+{
+inline void execute_render_command_impl(SDL_Renderer* renderer, const ScreenRenderCommand& render_command)
 {
     if (render_command.type == RenderCommandType::Texture)
     {
@@ -312,47 +249,23 @@ inline void execute_render_command(SDL_Renderer* renderer, const ScreenRenderCom
     case RenderCommandType::FillTriangle:
         return;
     }
-    execute_render_command(renderer, primitive);
+    execute_render_command_impl(renderer,primitive);
 }
 
-inline void execute_render_command(SDL_Renderer* renderer, const UiRenderCommand& render_command) noexcept
+inline void execute_render_command_impl(SDL_Renderer* renderer, const UiRenderCommand& render_command)
 {
-    if (!renderer)
-        return;
 
-    SDL_Rect previous_clip_rect{};
-    const bool had_clip_rect = SDL_RenderClipEnabled(renderer) == true;
-    if (had_clip_rect)
-        SDL_GetRenderClipRect(renderer, &previous_clip_rect);
-
-    if (render_command.use_clip_rect)
-    {
-        const SDL_Rect clip_rect = to_sdl_covering_rect(render_command.clip_rect);
-        SDL_SetRenderClipRect(renderer, &clip_rect);
-    }
-    else if (had_clip_rect)
-    {
-        SDL_SetRenderClipRect(renderer, nullptr);
-    }
-
-    const bool primitive_command = render_command.type != UiRenderCommandType::Texture;
-    SDL_BlendMode previous_blend_mode = SDL_BLENDMODE_NONE;
-    std::uint8_t previous_red = 0;
-    std::uint8_t previous_green = 0;
-    std::uint8_t previous_blue = 0;
-    std::uint8_t previous_alpha = 0;
-    if (primitive_command)
-    {
-        SDL_GetRenderDrawBlendMode(renderer, &previous_blend_mode);
-        SDL_GetRenderDrawColor(
-            renderer,
-            &previous_red,
-            &previous_green,
-            &previous_blue,
-            &previous_alpha);
-        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-    }
-
+    detail::RendererState state(renderer);
+    detail::with_render_state(state,[&] {
+        SDL_Rect clip_rect{};
+        if (render_command.use_clip_rect)
+        {
+            clip_rect = to_sdl_covering_rect(render_command.clip_rect);
+            state.set_clip(&clip_rect);
+        }
+        else state.set_clip(nullptr);
+        if (render_command.type != UiRenderCommandType::Texture)
+            state.set_blend(SDL_BLENDMODE_BLEND);
     switch (render_command.type)
     {
     case UiRenderCommandType::Texture:
@@ -378,15 +291,9 @@ inline void execute_render_command(SDL_Renderer* renderer, const UiRenderCommand
         SDL_FRect rect = to_sdl_frect(to_sdl_rect(render_command.screen_rect));
         const SDL_Color color = to_sdl_color(render_command.color);
 
-        SDL_SetRenderDrawColor(
-            renderer,
-            color.r,
-            color.g,
-            color.b,
-            color.a
-        );
+        state.set_color(color);
 
-        SDL_RenderFillRect(renderer, &rect);
+        detail::checked_render_operation("SDL_RenderFillRect",[&] { return SDL_RenderFillRect(renderer,&rect); });
         break;
     }
 
@@ -412,7 +319,7 @@ inline void execute_render_command(SDL_Renderer* renderer, const UiRenderCommand
         const std::int16_t y2 = clamp_circle_component(static_cast<float>(rect.y + rect.h - 1));
         const std::int16_t radius = clamp_circle_component(render_command.corner_radius);
 
-        roundedBoxRGBA(renderer,x1,y1,x2,y2,radius,color.r,color.g,color.b,color.a);
+        detail::checked_render_operation("roundedBoxRGBA",[&] { state.mark_gfx_changes(); return roundedBoxRGBA(renderer,x1,y1,x2,y2,radius,color.r,color.g,color.b,color.a); });
         break;
     }
 
@@ -434,7 +341,7 @@ inline void execute_render_command(SDL_Renderer* renderer, const UiRenderCommand
         const std::int16_t x = clamp_circle_component(render_command.circle_center.x);
         const std::int16_t y = clamp_circle_component(render_command.circle_center.y);
 
-        filledCircleRGBA(renderer, x, y, radius, color.r, color.g, color.b, color.a);
+        detail::checked_render_operation("filledCircleRGBA",[&] { state.mark_gfx_changes(); return filledCircleRGBA(renderer,x,y,radius,color.r,color.g,color.b,color.a); });
         break;
     }
 
@@ -443,39 +350,28 @@ inline void execute_render_command(SDL_Renderer* renderer, const UiRenderCommand
         break;
     }
 
-    if (primitive_command)
-    {
-        SDL_SetRenderDrawColor(
-            renderer,
-            previous_red,
-            previous_green,
-            previous_blue,
-            previous_alpha);
-        SDL_SetRenderDrawBlendMode(renderer, previous_blend_mode);
-    }
+    });
+}
+} // namespace detail
 
-    if (had_clip_rect)
-        SDL_SetRenderClipRect(renderer, &previous_clip_rect);
-    else
-        SDL_SetRenderClipRect(renderer, nullptr);
+[[nodiscard]] inline RenderResult execute_render_command(SDL_Renderer* renderer,const ScreenRenderCommand& command)
+{
+    return detail::render_boundary(renderer,[&] { detail::execute_render_command_impl(renderer,command); });
 }
 
-inline void execute_render_commands(
-    SDL_Renderer* renderer,
-    const std::vector<ScreenRenderCommand>& render_commands
-) noexcept
+[[nodiscard]] inline RenderResult execute_render_command(SDL_Renderer* renderer,const UiRenderCommand& command)
 {
-    for (const ScreenRenderCommand& render_command : render_commands)
-        execute_render_command(renderer, render_command);
+    return detail::render_boundary(renderer,[&] { detail::execute_render_command_impl(renderer,command); });
 }
 
-inline void execute_render_commands(
-    SDL_Renderer* renderer,
-    const std::vector<UiRenderCommand>& render_commands
-) noexcept
+template<typename Command>
+[[nodiscard]] inline RenderResult execute_render_commands(
+    SDL_Renderer* renderer,const std::vector<Command>& render_commands)
 {
-    for (const UiRenderCommand& render_command : render_commands)
-        execute_render_command(renderer, render_command);
+    return detail::render_boundary(renderer,[&] {
+        for (const Command& command : render_commands)
+            detail::execute_render_command_impl(renderer,command);
+    });
 }
 
 }

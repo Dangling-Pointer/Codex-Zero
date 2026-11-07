@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -35,26 +36,12 @@ void CameraManager::set_viewport_size(
 
 void CameraManager::set_zoom(CameraSlot slot, float zoom) noexcept
 {
-    std::erase_if(_requests, [slot](const CameraRequest& request)
-    {
-        return request.slot == slot
-            && std::holds_alternative<ZoomToRequest>(request.payload);
-    });
-
     rig(slot).controller.set_zoom(zoom);
 }
 
 void CameraManager::set_focus(CameraSlot slot, std::optional<CameraFocus> focus) noexcept
 {
     rig(slot).controller.set_focus(focus);
-}
-
-void CameraManager::set_focus_rect(
-    CameraSlot slot,
-    std::optional<elysia::core::Rect> focus_rect
-) noexcept
-{
-    rig(slot).controller.set_focus_rect(focus_rect);
 }
 
 void CameraManager::set_world_bounds(
@@ -81,18 +68,6 @@ void CameraManager::request_shake(
     _requests.push_back(CameraRequest{ slot, ShakeRequest{ params } });
 }
 
-void CameraManager::request_zoom_to(
-    CameraSlot slot,
-    float target_zoom,
-    double duration_seconds
-)
-{
-    _requests.push_back(CameraRequest{
-        slot,
-        ZoomToRequest{ target_zoom, duration_seconds }
-    });
-}
-
 void CameraManager::request_snap_to_focus(CameraSlot slot)
 {
     _requests.push_back(CameraRequest{ slot, SnapToFocusRequest{} });
@@ -103,14 +78,92 @@ void CameraManager::request_clear_effects(CameraSlot slot)
     _requests.push_back(CameraRequest{ slot, ClearEffectsRequest{} });
 }
 
-void CameraManager::update(double delta_seconds)
+CameraMotionId CameraManager::move_camera_to(
+    CameraSlot slot,
+    const CameraPoseTarget& target,
+    double duration_seconds,
+    CameraEasing easing,
+    CameraMotionEndBehavior end_behavior
+)
 {
+    return play_camera_path(slot, CameraMotionSpec{
+        .nodes = {CameraPathNode{
+            .target = target,
+            .duration_seconds = duration_seconds,
+            .easing = easing
+        }},
+        .end_behavior = end_behavior
+    });
+}
+
+CameraMotionId CameraManager::play_camera_path(CameraSlot slot, const CameraMotionSpec& motion)
+{
+    if (!valid_camera_slot(slot))
+        throw std::invalid_argument("Camera motion target slot is invalid.");
+    validate_camera_motion(motion);
+    const CameraMotionId id{_next_motion_id++};
+    rig(slot).controller.start_motion(id, motion);
+    return id;
+}
+
+std::optional<CameraMotionState> CameraManager::camera_motion_state(CameraMotionId id) const noexcept
+{
+    if (id.value == 0)
+        return std::nullopt;
+    for (const CameraRig& camera_rig : _rigs)
+        if (const auto state = camera_rig.controller.motion_state(id))
+            return state;
+    return std::nullopt;
+}
+
+bool CameraManager::pause_camera_motion(CameraMotionId id) noexcept
+{
+    for (CameraRig& camera_rig : _rigs)
+        if (camera_rig.controller.pause_motion(id))
+            return true;
+    return false;
+}
+
+bool CameraManager::resume_camera_motion(CameraMotionId id) noexcept
+{
+    for (CameraRig& camera_rig : _rigs)
+        if (camera_rig.controller.resume_motion(id))
+            return true;
+    return false;
+}
+
+bool CameraManager::cancel_camera_motion(CameraMotionId id) noexcept
+{
+    for (CameraRig& camera_rig : _rigs)
+        if (camera_rig.controller.cancel_motion(id))
+            return true;
+    return false;
+}
+
+void CameraManager::cancel_camera_motions(CameraSlotSet slots) noexcept
+{
+    for (std::size_t index = 0; index < _rigs.size(); ++index)
+        if (slots.contains(static_cast<CameraSlot>(index)))
+            _rigs[index].controller.cancel_motion();
+}
+
+CameraUpdateResult CameraManager::update(
+    CameraSlotSet slots,
+    double delta_seconds
+)
+{
+    CameraUpdateResult result;
     process_requests();
 
-    for (CameraRig& camera_rig : _rigs)
+    for (std::size_t index = 0; index < _rigs.size(); ++index)
     {
-        camera_rig.controller.update(delta_seconds);
+        const CameraSlot slot = static_cast<CameraSlot>(index);
+        if (!slots.contains(slot))
+            continue;
+        if (const auto completed = _rigs[index].controller.update(delta_seconds))
+            result.push(CameraMotionCompletion{*completed, slot});
     }
+    return result;
 }
 
 void CameraManager::reset(CameraSlot slot) noexcept
@@ -121,6 +174,13 @@ void CameraManager::reset(CameraSlot slot) noexcept
     });
 
     rig(slot).controller.reset_scene_state();
+}
+
+void CameraManager::reset(CameraSlotSet slots) noexcept
+{
+    for (std::size_t index = 0; index < _rigs.size(); ++index)
+        if (slots.contains(static_cast<CameraSlot>(index)))
+            reset(static_cast<CameraSlot>(index));
 }
 
 void CameraManager::reset_all() noexcept
@@ -166,11 +226,6 @@ void CameraManager::process_requests()
 
                 if constexpr (std::is_same_v<Payload, ShakeRequest>)
                     target.start_shake(payload.params);
-                else if constexpr (std::is_same_v<Payload, ZoomToRequest>)
-                    target.start_zoom_transition(
-                        payload.target_zoom,
-                        payload.duration_seconds
-                    );
                 else if constexpr (std::is_same_v<Payload, SnapToFocusRequest>)
                     target.snap_to_focus();
                 else if constexpr (std::is_same_v<Payload, ClearEffectsRequest>)

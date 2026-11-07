@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../save_data.h"
+#include "../../io/persistence/detail/persistence_operations.h"
 
 #include <expected>
 #include <filesystem>
@@ -14,13 +15,13 @@ struct SaveStoreLoadResult
 {
     SaveData data;
     bool recovered = false;
-    std::string warning;
+    std::optional<SaveFailure> warning;
 };
 
 class SaveStore
 {
 public:
-    explicit SaveStore(std::filesystem::path save_directory);
+    explicit SaveStore(std::filesystem::path save_directory,io::detail::PersistenceOperations operations = {});
 
     [[nodiscard]] std::expected<void,SaveFailure> initialize() const;
     [[nodiscard]] std::expected<SaveStoreLoadResult,SaveFailure> load(
@@ -48,5 +49,6 @@ private:
 
 private:
     std::filesystem::path _save_directory;
+    io::detail::PersistenceOperations _operations;
 };
 }

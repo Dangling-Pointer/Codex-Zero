@@ -107,7 +107,7 @@ CameraFollowResult SmoothFollowStrategy::update(const CameraFollowContext& conte
     const float distance = delta.length();
     const float max_step = static_cast<float>(_follow_speed_units_per_second * delta_seconds);
 
-    if (distance <= max_step || distance <= elysia::core::Vector2::k_epsilon)
+    if (distance <= max_step || distance <= elysia::core::Vector2::kEpsilon)
     {
         return {target_center, std::nullopt};
     }

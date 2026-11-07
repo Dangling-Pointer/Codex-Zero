@@ -1,3 +1,4 @@
+#include "engine/builtin/audio/builtin_music_player.h"
 #include "elysia_intro_scene.h"
 
 #include "realm_content_payload.h"
@@ -75,8 +76,8 @@ void ElysiaIntroScene::on_enter(const elysia::scene::ScenePayload& payload)
     _root_window->set_visible(true);
     _root_window->set_active(true);
 
-    if (!elysia::builtin::BuiltinResources::instance()->play_music(
-            elysia::builtin::BuiltinMusicId::ElysianRealm))
+    if (!elysia::builtin::BuiltinMusicPlayer::instance()->play(
+            elysia::builtin::BuiltinMusicId::ElysianRealm, -1, std::chrono::milliseconds{1500}))
     {
         destroy_ui();
         throw std::logic_error("ElysiaIntroScene could not play Realm music.");
@@ -88,10 +89,14 @@ void ElysiaIntroScene::on_enter(const elysia::scene::ScenePayload& payload)
     _code_timer.restart();
 }
 
-void ElysiaIntroScene::on_update(double delta)
+void ElysiaIntroScene::on_before_update(double delta)
 {
     _code_timer.update(delta);
-    elysia::scene::Scene::on_update(delta);
+}
+
+void ElysiaIntroScene::on_after_update(double delta)
+{
+    (void)delta;
     request_realm_transition();
 }
 
@@ -99,7 +104,7 @@ void ElysiaIntroScene::on_exit()
 {
     stop_playback();
     if (!_music_handed_off)
-        elysia::builtin::BuiltinResources::instance()->stop_music();
+        elysia::builtin::BuiltinMusicPlayer::instance()->stop();
 
     _music_handed_off = false;
     _paused = false;
@@ -110,7 +115,7 @@ void ElysiaIntroScene::on_exit()
     }
 }
 
-void ElysiaIntroScene::reset()
+void ElysiaIntroScene::on_reset()
 {
     stop_playback();
     _current_line = 0;

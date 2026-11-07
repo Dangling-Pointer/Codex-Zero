@@ -20,9 +20,10 @@ public:
     SettingsScene() = default;
     ~SettingsScene() override = default;
 
+protected:
     void on_enter(const elysia::scene::ScenePayload& payload) override;
     void on_exit() override;
-    void reset() override;
+    void on_reset() override;
 
 private:
     void build_ui();

@@ -20,9 +20,12 @@ class Bootstrapper : public elysia::tools::Singleton<Bootstrapper>
 public:
     [[nodiscard]] std::expected<BootstrapOutput,BootstrapFailure>
         parse_runtime_settings(const std::filesystem::path& executable_path);
+
     [[nodiscard]] std::expected<void,BootstrapFailure>
         preload_startup_resources(SDL_Renderer* renderer);
+
     void release_preload_textures() noexcept;
+
     [[nodiscard]] SDL_Texture* find_preload_texture(
         std::string_view key) const noexcept;
 

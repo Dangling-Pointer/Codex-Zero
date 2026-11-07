@@ -1,5 +1,7 @@
 #include "timer.h"
 
+#include <algorithm>
+
 namespace elysia::tools
 {
 void Timer::restart()
@@ -39,7 +41,35 @@ void Timer::resume()
 	++_state_version;
 }
 
-bool Timer::is_paused() const
+double Timer::get_wait_time() const noexcept
+{
+	return _wait_time_seconds;
+}
+
+double Timer::get_elapsed_time() const noexcept
+{
+	return is_finished() ? _wait_time_seconds : _elapsed_seconds;
+}
+
+double Timer::get_remaining_time() const noexcept
+{
+	if (_wait_time_seconds <= 0.0 || is_finished())
+		return 0.0;
+
+	return std::max(_wait_time_seconds - get_elapsed_time(), 0.0);
+}
+
+bool Timer::is_one_shot() const noexcept
+{
+	return _is_one_shot;
+}
+
+bool Timer::is_finished() const noexcept
+{
+	return _is_one_shot && _has_shot;
+}
+
+bool Timer::is_paused() const noexcept
 {
 	return _is_paused;
 }

@@ -57,6 +57,7 @@ struct SettingsPanelOptions
 
 struct SettingsPanelVisibility
 {
+    // Controls both the display-mode selector and the separate window-size selector.
     bool window_mode = true;
     bool target_fps = true;
     bool vsync = true;
@@ -135,7 +136,8 @@ private:
     SettingsPanelSaveCallback _on_save;
     SettingsPanelBackCallback _on_back;
     UiScrollContainer* _content_scroll = nullptr;
-    UiDropdown* _window_option_dropdown = nullptr;
+    UiDropdown* _window_mode_dropdown = nullptr;
+    UiDropdown* _window_size_dropdown = nullptr;
     UiDropdown* _target_fps_dropdown = nullptr;
     UiLabeledCheckbox* _vsync_checkbox = nullptr;
     UiSlider* _master_volume_slider = nullptr;

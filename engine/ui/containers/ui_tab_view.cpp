@@ -30,7 +30,15 @@ void UiTabView::on_ui_input_frame(const UiInputFrame& input)
 
 bool UiTabView::on_ui_input_event(const UiInputEvent& event)
 {
-    const bool routes_to_page = (event.action == UiAction::Confirm
+    if (event.type == UiInputEventType::PointerPressed && event.device == elysia::input::InputDevice::Mouse
+        && event.control == elysia::input::RawInputControl::MouseLeft)
+    {
+        update_focus_input_device(event.device);
+        synchronize_focus_state();
+        (void)set_focused_target_internal(find_registered_target_at(event.mouse_x,event.mouse_y));
+        sync_delegated_scope_focus(focused_target(),is_scope_focused(),delegated_focus_regions(*this));
+    }
+    const bool routes_to_page = ((event.action == UiAction::Confirm || event.action == UiAction::Cancel)
             && (event.type == UiInputEventType::ActionPressed || event.type == UiInputEventType::ActionReleased))
         || (event.type == UiInputEventType::ActionPressed && is_navigation_action(event.action));
 

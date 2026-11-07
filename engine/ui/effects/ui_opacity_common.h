@@ -23,8 +23,8 @@ inline double ratio(double value,double max_value) noexcept
 // Applies a smooth ease-in/ease-out curve to an animation ratio.
 inline double ease_in_out(double t) noexcept
 {
-    constexpr double k_pi = 3.14159265358979323846;
-    return 0.5 - 0.5 * std::cos(k_pi * clamp_unit(t));
+    constexpr double kPi = 3.14159265358979323846;
+    return 0.5 - 0.5 * std::cos(kPi * clamp_unit(t));
 }
 
 // Interpolates between two opacity values using a clamped normalized time.

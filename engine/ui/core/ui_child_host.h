@@ -117,6 +117,8 @@ public:
     }
 
     // Releases all child ownership and detaches their layout-parent links.
+    void cancel_input_interaction() override;
+    elysia::input::InputCapture input_capture() const noexcept override;
     void clear_children();
     // Detaches and returns one child while preserving ownership for transactional composites.
     [[nodiscard]] std::unique_ptr<UiElement> extract_child(std::size_t index);

@@ -4,6 +4,8 @@
 
 #include <cstddef>
 
+#define ELYSIA_TIME (::elysia::core::Time::instance())
+
 namespace elysia::core
 {
 class Time : public elysia::tools::Singleton<Time>

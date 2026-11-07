@@ -12,24 +12,26 @@ std::expected<UserConfigLoadResult,UserConfigFailure> UserConfigService::initial
     const UserConfigData& default_settings,
     const std::filesystem::path& user_config_path)
 {
-    shutdown();
-    _user_config_store = std::make_unique<UserConfigStore>();
-    const auto settings_result = _user_config_store->load(user_config_path,default_settings);
+    auto prepared_store = std::make_unique<UserConfigStore>();
+    auto prepared_path = user_config_path;
+    auto settings_result = prepared_store->load(prepared_path,default_settings);
     if (!settings_result)
         return std::unexpected(settings_result.error());
     _user_config.initialize(settings_result->settings);
-    _user_config_path = user_config_path;
+    _user_config_store = std::move(prepared_store);
+    _user_config_path.swap(prepared_path);
     _initialized = true;
-    return *settings_result;
+    return std::move(*settings_result);
 }
 
 std::expected<void,UserConfigFailure> UserConfigService::save_user_config()
 {
     if (!_initialized)
-        return std::unexpected(UserConfigFailure{UserConfigError::SaveFailed,{},"Config service is not initialized."});
-    const auto result = _user_config_store->save(_user_config_path,_user_config.snapshot());
+        return std::unexpected(make_user_config_failure(UserConfigError::SaveFailed,{},"Config service is not initialized."));
+    auto prepared = _user_config.snapshot();
+    const auto result = _user_config_store->save(_user_config_path,prepared);
     if (!result) return std::unexpected(result.error());
-    _user_config.mark_persisted();
+    _user_config.mark_persisted(std::move(prepared));
     return {};
 }
 
@@ -48,11 +50,7 @@ UserConfigService::apply_and_save_user_config(
     if (!_initialized)
     {
         return std::unexpected(UserConfigCommitFailure{
-            UserConfigFailure{
-                UserConfigError::SaveFailed,
-                {},
-                "Config service is not initialized."
-            },
+            make_user_config_failure(UserConfigError::SaveFailed,{},"Config service is not initialized."),
             std::nullopt
         });
     }

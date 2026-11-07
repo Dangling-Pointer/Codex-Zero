@@ -113,7 +113,7 @@ std::expected<void,SaveFailure> SaveService::set(
     if (!changed)
     {
         SaveFailure error = changed.error();
-        error.save_name = std::string(save_name);
+        bind_save_name(error,save_name);
         return std::unexpected(std::move(error));
     }
     if (*changed)
@@ -137,7 +137,7 @@ std::expected<std::remove_cvref_t<T>,SaveFailure> SaveService::get(
     if (!result)
     {
         SaveFailure error = result.error();
-        error.save_name = std::string(save_name);
+        bind_save_name(error,save_name);
         return std::unexpected(std::move(error));
     }
     return result;

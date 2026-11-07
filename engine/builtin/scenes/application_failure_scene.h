@@ -22,10 +22,11 @@ public:
     ApplicationFailureScene() = default;
     ~ApplicationFailureScene() override = default;
 
+protected:
     void on_enter(const elysia::scene::ScenePayload& payload) override;
     void on_exit() override;
-    void reset() override;
-    void on_update(double delta) override;
+    void on_reset() override;
+    void on_after_update(double delta) override;
 
 private:
     void apply_payload(const ApplicationFailureScenePayload& payload);

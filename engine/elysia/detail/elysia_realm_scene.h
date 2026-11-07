@@ -16,9 +16,10 @@ class ElysiaRealmScene final : public elysia::scene::Scene
 {
 public:
     ElysiaRealmScene() = default;
+protected:
     void on_enter(const elysia::scene::ScenePayload& payload) override;
     void on_exit() override;
-    void reset() override;
+    void on_reset() override;
 
 private:
     void build_ui();

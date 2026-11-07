@@ -7,7 +7,7 @@ namespace elysia::core
 class Vector2
 {
 public:
-	static constexpr float k_epsilon = 1e-6f;
+	static constexpr float kEpsilon = 1e-6f;
 
 	float x = 0.0f;
 	float y = 0.0f;
@@ -132,17 +132,17 @@ public:
 		return (*this - vec).length();
 	}
 
-	[[nodiscard]] bool is_zero(float epsilon = k_epsilon) const noexcept
+	[[nodiscard]] bool is_zero(float epsilon = kEpsilon) const noexcept
 	{
 		return std::fabs(x) <= epsilon && std::fabs(y) <= epsilon;
 	}
 
-	[[nodiscard]] bool nearly_equals(const Vector2& vec, float epsilon = k_epsilon) const noexcept
+	[[nodiscard]] bool nearly_equals(const Vector2& vec, float epsilon = kEpsilon) const noexcept
 	{
 		return std::fabs(x - vec.x) <= epsilon && std::fabs(y - vec.y) <= epsilon;
 	}
 
-	[[nodiscard]] Vector2 normalized(float epsilon = k_epsilon) const noexcept
+	[[nodiscard]] Vector2 normalized(float epsilon = kEpsilon) const noexcept
 	{
 		float len = length();
 		if (len <= epsilon)
@@ -153,12 +153,12 @@ public:
 		return *this / len;
 	}
 
-	[[nodiscard]] Vector2 normalize(float epsilon = k_epsilon) const noexcept
+	[[nodiscard]] Vector2 normalize(float epsilon = kEpsilon) const noexcept
 	{
 		return normalized(epsilon);
 	}
 
-	bool normalize_in_place(float epsilon = k_epsilon) noexcept
+	bool normalize_in_place(float epsilon = kEpsilon) noexcept
 	{
 		float len = length();
 		if (len <= epsilon)
@@ -172,7 +172,7 @@ public:
 		return true;
 	}
 
-	[[nodiscard]] Vector2 direction_to(const Vector2& vec, float epsilon = k_epsilon) const noexcept
+	[[nodiscard]] Vector2 direction_to(const Vector2& vec, float epsilon = kEpsilon) const noexcept
 	{
 		return (vec - *this).normalized(epsilon);
 	}

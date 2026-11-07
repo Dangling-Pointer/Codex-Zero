@@ -44,6 +44,7 @@ void UiLabel::reset() noexcept
     _visual_role = UiLabelVisualRole::Default;
     _typography_role = UiTypographyRole::Label;
     _font_source_override.reset();
+    _font_language_override.reset();
     _text_fit_mode = UiLabelTextFitMode::ShrinkToFit;
     _horizontal_align = resolve_ui_typography(_typography_role).horizontal_align_default;
     _vertical_align = TextVerticalAlign::Top;
@@ -72,6 +73,7 @@ void UiLabel::submit_ui_render_commands(std::vector<elysia::core::UiRenderComman
     elysia::localization::LocalizedTextStyle text_style;
     text_style.typography_role = _typography_role;
     text_style.font_source_override = _font_source_override;
+    text_style.font_language_override = _font_language_override;
     text_style.color = style.text;
     text_style.wrap_width = typography.wrap_allowed ? std::max(0,static_cast<int>(content_rect().width())) : 0;
 
@@ -207,6 +209,32 @@ void UiLabel::set_vertical_align(TextVerticalAlign align)
 TextVerticalAlign UiLabel::vertical_align() const noexcept
 {
     return _vertical_align;
+}
+
+void UiLabel::set_font_language_override(std::string language)
+{
+    if (language.empty())
+    {
+        clear_font_language_override();
+        return;
+    }
+    if (_font_language_override == language)
+        return;
+    _font_language_override = std::move(language);
+    notify_layout_parent_of_intrinsic_layout_invalidation();
+}
+
+void UiLabel::clear_font_language_override() noexcept
+{
+    if (!_font_language_override)
+        return;
+    _font_language_override.reset();
+    notify_layout_parent_of_intrinsic_layout_invalidation();
+}
+
+const std::optional<std::string>& UiLabel::font_language_override() const noexcept
+{
+    return _font_language_override;
 }
 
 void UiLabel::set_padding(int padding)

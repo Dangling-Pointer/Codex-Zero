@@ -42,7 +42,7 @@ struct FloatingNumberGlyph
 class FloatingNumberGlyphCache
 {
 public:
-    static constexpr std::size_t k_color_count = static_cast<std::size_t>(FloatingNumberColor::Count);
+    static constexpr std::size_t kColorCount = static_cast<std::size_t>(FloatingNumberColor::Count);
 
     [[nodiscard]] bool configure(
         SDL_Renderer* renderer,
@@ -66,7 +66,7 @@ private:
     [[nodiscard]] std::optional<FloatingNumberGlyph> create_glyph(FloatingNumberColor color, char ch) const;
 
 private:
-    std::array<std::unordered_map<char,FloatingNumberGlyph>,k_color_count> _glyphs;
+    std::array<std::unordered_map<char,FloatingNumberGlyph>,kColorCount> _glyphs;
     SDL_Renderer* _renderer = nullptr;
     TTF_Font* _font = nullptr;
     std::uint64_t _font_generation = 0;

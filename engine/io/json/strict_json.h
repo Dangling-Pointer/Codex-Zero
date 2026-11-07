@@ -17,6 +17,7 @@ enum class JsonFileError
     FileMissing,
     FilesystemAccess,
     OpenFailed,
+    ReadFailed,
     ParseFailed,
     DuplicateProperty
 };

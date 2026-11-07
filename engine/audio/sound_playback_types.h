@@ -53,6 +53,8 @@ struct SoundPlayOptions
     SoundGroup group = SoundGroup::Extra;
     std::chrono::milliseconds start_delay{ 0 };
     std::chrono::milliseconds fade_in{ 0 };
+    // Finite, nonnegative instance multiplier, composed with settings and fades.
+    double gain = 1.0;
 };
 
 using SoundHandle = std::uint64_t;

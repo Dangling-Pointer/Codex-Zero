@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 
 #include "input_types.h"
+#include "input_source.h"
 
 #include <cstdint>
 #include <string>
@@ -137,26 +138,20 @@ enum class RawInputControl
 
 [[nodiscard]] constexpr bool is_keyboard_control(RawInputControl control) noexcept
 {
-    return control >= RawInputControl::KeyA
-        && control <= RawInputControl::KeyF12;
+    return control >= RawInputControl::KeyA && control <= RawInputControl::KeyF12;
 }
 
 [[nodiscard]] constexpr bool is_mouse_button_control(RawInputControl control) noexcept
 {
-    return control >= RawInputControl::MouseLeft
-        && control <= RawInputControl::MouseX2;
+    return control >= RawInputControl::MouseLeft && control <= RawInputControl::MouseX2;
 }
 
 [[nodiscard]] constexpr bool is_gamepad_button_control(RawInputControl control) noexcept
 {
-    return control >= RawInputControl::GamepadSouth
-        && control <= RawInputControl::GamepadTouchpad;
+    return control >= RawInputControl::GamepadSouth && control <= RawInputControl::GamepadTouchpad;
 }
 
-[[nodiscard]] constexpr bool matches_control(
-    RawInputControl expected,
-    RawInputControl actual
-) noexcept
+[[nodiscard]] constexpr bool matches_control(RawInputControl expected, RawInputControl actual) noexcept
 {
     switch (expected)
     {
@@ -167,9 +162,8 @@ enum class RawInputControl
     case RawInputControl::AnyGamepadButton:
         return is_gamepad_button_control(actual);
     case RawInputControl::AnyControl:
-        return is_keyboard_control(actual)
-            || is_mouse_button_control(actual)
-            || is_gamepad_button_control(actual);
+        return is_keyboard_control(actual) || is_mouse_button_control(actual) ||
+               is_gamepad_button_control(actual);
     default:
         return expected == actual;
     }
@@ -212,14 +206,17 @@ struct RawInputEvent
     int mouse_y = 0;
     int mouse_delta_x = 0;
     int mouse_delta_y = 0;
-    int wheel_x = 0;
-    int wheel_y = 0;
+    float wheel_x = 0;
+    float wheel_y = 0;
     int composition_start = 0;
     int composition_length = 0;
     // Stick axes: [-1.0f, 1.0f]
     // Trigger axes: [0.0f, 1.0f]
     float axis_value = 0.0f;
     std::string text;
+    InputSourceId source{};
+    // Assigned by Scene for exact operation consumption within one snapshot.
+    std::uint64_t routing_id = 0;
 };
 
-}
+} // namespace elysia::input

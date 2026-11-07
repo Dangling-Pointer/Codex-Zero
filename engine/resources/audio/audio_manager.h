@@ -33,6 +33,7 @@ public:
 	[[nodiscard]] std::expected<void,ResourceFailure> store_sound(
 		const std::string& key,MIX_Audio* sound);
 	MIX_Audio* find_sound(const std::string_view& key) const;
+    [[nodiscard]] bool has_sound(std::string_view key) const;
 
 	[[nodiscard]] std::expected<void,ResourceFailure> load_music(
 		const std::string& key,

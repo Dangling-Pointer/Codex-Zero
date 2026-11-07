@@ -2,6 +2,7 @@
 
 #include "../builtin_scene_keys.h"
 #include "../../scene/routing/scene_route.h"
+#include "../../scene/scene_boundary_failure.h"
 #include "../../core/diagnostics/failure_diagnostic.h"
 #include "../../loading/content_load_failure.h"
 
@@ -82,7 +83,7 @@ struct ApplicationFailureScenePayload
 [[nodiscard]] inline elysia::scene::SceneRoute make_application_failure_route(
     ApplicationFailurePresentation presentation,
     std::string category,
-    std::string diagnostic_message)
+    elysia::core::FailureDiagnostic diagnostic)
 {
     return elysia::scene::SceneRoute{
         .target = SceneKeys::ApplicationFailure,
@@ -94,10 +95,16 @@ struct ApplicationFailureScenePayload
             .error_code = presentation == ApplicationFailurePresentation::StartupLoading
                 ? "STARTUP-FAILURE" : "APPLICATION-FATAL",
             .category = std::move(category),
-            .diagnostic = elysia::core::make_failure_diagnostic(
-                std::move(diagnostic_message))
+            .diagnostic = std::move(diagnostic)
         },
         .reload_mode = elysia::scene::SceneReloadMode::Reuse
     };
 }
+[[nodiscard]] inline elysia::scene::SceneRoute make_application_failure_route(
+    const elysia::scene::SceneBoundaryFailure& failure)
+{
+    return make_application_failure_route(ApplicationFailurePresentation::RuntimeFatal,
+        "scene",elysia::scene::to_failure_diagnostic(failure));
+}
+
 }

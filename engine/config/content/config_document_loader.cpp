@@ -20,12 +20,7 @@ std::expected<ConfigDocument,ConfigLoadFailure> ConfigDocumentLoader::load(
             return std::unexpected(make_config_load_failure(ConfigLoadError::DuplicateKey,
                 json_failure.message,origin,origin,json_failure.origin));
         }
-        const ConfigLoadError code = json_failure.code == elysia::io::JsonFileError::FileMissing
-            ? ConfigLoadError::FileMissing
-            : json_failure.code == elysia::io::JsonFileError::FilesystemAccess
-                ? ConfigLoadError::FilesystemAccess : ConfigLoadError::OpenFailed;
-        return std::unexpected(make_config_load_failure(code,json_failure.message,
-            entry.origin,{},json_failure.origin));
+        return std::unexpected(config_failure_from_json(json_failure,ConfigOrigin{source,{},entry.key_namespace,{}}));
     }
     return ConfigDocument{entry.key_namespace,entry.document_path,*parsed,
         ConfigOrigin{source,"",entry.key_namespace,entry.key_namespace}};

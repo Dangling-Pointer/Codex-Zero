@@ -43,6 +43,10 @@ public:
     UiRadioButton(const elysia::core::Vector2& center,const elysia::core::Vector2& size,UiFromCenterTag,int order = 0) noexcept;
     UiRadioButton(const elysia::core::Rect& rect,const UiRadioButtonConfig& config,int order = 0) noexcept;
 
+    void cancel_input_interaction() noexcept override
+    {
+        _pushed = false;
+    }
     void reset() noexcept override;
     void set_enabled(bool enabled) override;
     void set_focused(bool focused) override;

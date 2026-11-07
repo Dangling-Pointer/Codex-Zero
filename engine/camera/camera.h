@@ -8,13 +8,13 @@ namespace elysia::camera
 class Camera
 {
 public:
-    static constexpr float k_default_zoom = 1.0f;
-    static constexpr float k_min_zoom = 0.1f;
-    static constexpr float k_max_zoom = 10.0f;
+    static constexpr float kDefaultZoom = 1.0f;
+    static constexpr float kMinZoom = 0.1f;
+    static constexpr float kMaxZoom = 10.0f;
 
     Camera() = default;
     Camera(const elysia::core::Vector2& center,const elysia::core::Vector2& viewport_size,
-        float zoom = k_default_zoom) noexcept;
+        float zoom = kDefaultZoom) noexcept;
 
     void set_center(const elysia::core::Vector2& center) noexcept;
     void set_viewport_size(const elysia::core::Vector2& viewport_size) noexcept;
@@ -43,6 +43,6 @@ public:
 private:
     elysia::core::Vector2 _center{};
     elysia::core::Vector2 _viewport_size{};
-    float _zoom = k_default_zoom;
+    float _zoom = kDefaultZoom;
 };
 }

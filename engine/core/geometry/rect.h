@@ -9,7 +9,7 @@ namespace elysia::core
 {
 struct Rect
 {
-    static constexpr float k_epsilon = Vector2::k_epsilon;
+    static constexpr float kEpsilon = Vector2::kEpsilon;
 
     constexpr Rect() noexcept = default;
 
@@ -91,7 +91,7 @@ struct Rect
 
     [[nodiscard]] bool nearly_equals(
         const Rect& rect,
-        float epsilon = k_epsilon
+        float epsilon = kEpsilon
     ) const noexcept
     {
         return std::fabs(_x - rect._x) <= epsilon
@@ -250,7 +250,7 @@ struct Rect
         return _width * _height;
     }
 
-    [[nodiscard]] constexpr bool is_empty(float epsilon = k_epsilon) const noexcept
+    [[nodiscard]] constexpr bool is_empty(float epsilon = kEpsilon) const noexcept
     {
         return _width <= epsilon || _height <= epsilon;
     }

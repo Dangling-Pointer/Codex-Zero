@@ -7,8 +7,10 @@
 #include "../../text/ui_typography.h"
 #include "../../../typography/font_settings.h"
 
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <variant>
 
 namespace elysia::ui
 {
@@ -42,9 +44,19 @@ public:
     void reset() noexcept override;
     void submit_ui_render_commands(std::vector<elysia::core::UiRenderCommand>& out_commands) const override;
 
-    // Replaces the numeric value used to generate the rendered digit string.
+    // Replaces the numeric value; non-finite values enter the missing state.
     void set_value(double value);
+    // Preserves every signed 64-bit digit without conversion through double.
+    void set_integer_value(std::int64_t value);
+    // Returns an exact value only when the last numeric assignment was an integer.
+    [[nodiscard]] std::optional<std::int64_t> integer_value() const noexcept;
+    // Displays "--" without a suffix until the next numeric assignment.
+    void clear_value();
+    [[nodiscard]] bool has_value() const noexcept;
+    // Floating-point view may lose integer precision; missing values return zero.
     [[nodiscard]] double value() const noexcept;
+    // Returns the formatted number, or "--" in the missing state.
+    [[nodiscard]] std::string formatted_text() const;
 
     void set_base_style(const UiNumberStyle& style) noexcept;
     void set_style_overrides(const UiNumberStyleOverrides& overrides) noexcept;
@@ -85,6 +97,10 @@ public:
     [[nodiscard]] std::optional<float> target_height() const noexcept;
     void clear_target_height();
 
+    // Uniformly shrinks the glyph run to the padded width and height, never enlarging it.
+    void set_shrink_to_fit(bool enabled);
+    [[nodiscard]] bool shrinks_to_fit() const noexcept;
+
     void set_decimal_places(int decimal_places);
     [[nodiscard]] int decimal_places() const noexcept;
 
@@ -100,15 +116,13 @@ public:
 private:
     // Returns the padded interior used to position rendered digits.
     [[nodiscard]] elysia::core::Rect content_rect() const noexcept;
-    // Formats the current numeric value using suffix and decimal display settings.
-    [[nodiscard]] std::string formatted_text() const;
     // Normalizes trailing fractional zeros while preserving optional decimal point output.
     [[nodiscard]] static std::string trim_fractional_zeros(
         std::string text,
         bool keep_decimal_point
     );
 private:
-    double _value = 0.0;
+    std::variant<std::monostate,double,std::int64_t> _value = 0.0;
     UiStyleState<UiNumberStyle> _style_state;
     elysia::typography::UiTypographyRole _typography_role =
         elysia::typography::UiTypographyRole::Number;
@@ -119,6 +133,7 @@ private:
     float _digit_spacing = 0.0f;
     std::optional<float> _fixed_glyph_advance;
     std::optional<float> _target_height;
+    bool _shrink_to_fit = false;
     int _decimal_places = 0;
     bool _trim_trailing_zeros = true;
     bool _keep_decimal_point = false;

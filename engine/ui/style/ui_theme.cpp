@@ -40,8 +40,21 @@ template<class Enum>
     return UiChromeThemeColors{ background,border };
 }
 
-[[nodiscard]] UiTheme finalize_dialog_theme(UiTheme theme) noexcept
+[[nodiscard]] UiTheme finalize_theme(
+    UiTheme theme,elysia::core::Color page,elysia::core::Color section,
+    elysia::core::Color button_idle) noexcept
 {
+    // Containers describe their purpose; each theme supplies its own surface family.
+    theme.window_style.background = page;
+    theme.panel_styles[to_index(UiPanelVisualRole::Screen)].background = page;
+    theme.panel_styles[to_index(UiPanelVisualRole::Default)].background = section;
+    theme.panel_styles[to_index(UiPanelVisualRole::List)].background = section;
+    theme.chrome_container_style.background = section;
+    theme.chrome_container_style.header_background = page;
+    // Scrolling does not introduce a surface over its window, panel, or popup.
+    theme.scroll_container_style.background_color = elysia::core::colors::transparent;
+    // Button fills remain subtly separate from both page and section surfaces.
+    theme.button_styles[to_index(UiButtonVisualRole::Default)].chrome.background.idle = button_idle;
     // Keep the initial action appearance familiar while reserving a distinct semantic slot.
     theme.dialog_style.action_button = theme.button(UiButtonVisualRole::Default);
     return theme;
@@ -226,7 +239,8 @@ template<class Enum>
         UiPalette::border_default
     };
 
-    return finalize_dialog_theme(std::move(theme));
+    return finalize_theme(std::move(theme),UiPalette::surface_base,UiPalette::surface_elevated,
+        elysia::core::colors::blue_glass_button_idle);
 }
 
 [[nodiscard]] UiTheme make_elysia_light_theme() noexcept
@@ -256,9 +270,9 @@ template<class Enum>
     const UiChromeThemeColors interactive_chrome = make_chrome(interactive_surface,border);
     const UiChromeThemeColors default_button_chrome = make_chrome(
         make_surface_colors(
-            elysia::core::colors::elysia_chiffon_pink,
-            elysia::core::colors::elysia_silk_white,
-            elysia::core::colors::elysia_opal_lilac,
+            elysia::core::colors::elysia_light_button_idle,
+            elysia::core::colors::elysia_light_button_focus,
+            elysia::core::colors::elysia_light_button_active,
             elysia::core::colors::gray_300),
         UiInteractiveColors{
             elysia::core::colors::elysia_plum,
@@ -349,14 +363,14 @@ template<class Enum>
     theme.button_styles[to_index(UiButtonVisualRole::Danger)] = UiButtonThemeColors{
         make_chrome(
             make_surface_colors(
-                elysia::core::colors::elysia_corruption_blue,
-                elysia::core::colors::elysia_corruption_blue_focus,
-                elysia::core::colors::elysia_corruption_blue_active,
+                elysia::core::colors::elysia_rose_copper,
+                elysia::core::colors::elysia_rose_copper_focus,
+                elysia::core::colors::elysia_rose_copper_active,
                 elysia::core::colors::gray_300),
             UiInteractiveColors{
-                elysia::core::colors::elysia_corruption_glow,
-                elysia::core::colors::elysia_corruption_ice,
-                elysia::core::colors::elysia_silk_white,
+                elysia::core::colors::elysia_rose_gold,
+                elysia::core::colors::elysia_rose_gold_focus,
+                elysia::core::colors::elysia_rose_gold_active,
                 elysia::core::colors::gray_500 }),
         make_text_colors(elysia::core::colors::elysia_silk_white,elysia::core::colors::gray_100)
     };
@@ -403,7 +417,11 @@ template<class Enum>
         elysia::core::colors::elysia_velvet_rose
     };
 
-    return finalize_dialog_theme(std::move(theme));
+    theme.button_styles[to_index(UiButtonVisualRole::Default)].text.enabled =
+        elysia::core::colors::elysia_twilight_rose;
+    return finalize_theme(std::move(theme),
+        elysia::core::colors::elysia_chiffon_pink,elysia::core::colors::elysia_pearl_white,
+        elysia::core::colors::elysia_light_button_idle);
 }
 
 [[nodiscard]] UiTheme make_elysia_dark_theme() noexcept
@@ -433,9 +451,9 @@ template<class Enum>
     const UiChromeThemeColors interactive_chrome = make_chrome(interactive_surface,border);
     const UiChromeThemeColors default_button_chrome = make_chrome(
         make_surface_colors(
-            elysia::core::colors::elysia_twilight_mist,
-            elysia::core::colors::elysia_focus_blue,
-            elysia::core::colors::elysia_deep_sea,
+            elysia::core::colors::elysia_dark_button_idle,
+            elysia::core::colors::elysia_dark_button_focus,
+            elysia::core::colors::elysia_dark_button_active,
             elysia::core::colors::elysia_deep_sea),
         UiInteractiveColors{
             elysia::core::colors::elysia_starlight_lilac,
@@ -593,7 +611,9 @@ template<class Enum>
         elysia::core::colors::elysia_starlight_lilac
     };
 
-    return finalize_dialog_theme(std::move(theme));
+    return finalize_theme(std::move(theme),
+        elysia::core::colors::elysia_starsea_navy,elysia::core::colors::elysia_twilight_mist,
+        elysia::core::colors::elysia_dark_button_idle);
 }
 
 [[nodiscard]] UiTheme make_evangelion_unit00_theme() noexcept
@@ -690,13 +710,13 @@ template<class Enum>
     theme.button_styles[to_index(UiButtonVisualRole::Primary)] = UiButtonThemeColors{
         make_chrome(
             make_surface_colors(
-                elysia::core::colors::eva_unit00_frost_blue,
-                elysia::core::colors::eva_unit00_caution_gold,
-                elysia::core::colors::eva_unit00_warning_yellow,
+                elysia::core::colors::eva_unit00_primary_idle,
+                elysia::core::colors::alice_blue,
+                elysia::core::colors::eva_unit00_pale_blue,
                 elysia::core::colors::gray_300),
             UiInteractiveColors{
                 elysia::core::colors::eva_unit00_soft_graphite,
-                elysia::core::colors::eva_unit00_signal_orange,
+                elysia::core::colors::eva_unit00_deep_graphite,
                 elysia::core::colors::gray_900,
                 elysia::core::colors::gray_500 }),
         make_text_colors(elysia::core::colors::eva_unit00_deep_graphite,elysia::core::colors::gray_700)
@@ -758,7 +778,11 @@ template<class Enum>
         elysia::core::colors::eva_unit00_soft_graphite
     };
 
-    return finalize_dialog_theme(std::move(theme));
+    theme.button_styles[to_index(UiButtonVisualRole::Default)].chrome.background.focused =
+        elysia::core::colors::eva_unit00_focus_blue;
+    return finalize_theme(std::move(theme),
+        elysia::core::colors::eva_unit00_frost_blue,elysia::core::colors::eva_unit00_rei_white,
+        elysia::core::colors::eva_unit00_button_idle);
 }
 
 [[nodiscard]] UiTheme make_evangelion_unit01_theme() noexcept
@@ -923,7 +947,9 @@ template<class Enum>
         elysia::core::colors::eva_unit01_toxic_green
     };
 
-    return finalize_dialog_theme(std::move(theme));
+    return finalize_theme(std::move(theme),
+        elysia::core::colors::eva_unit01_void_purple,elysia::core::colors::eva_unit01_deep_purple,
+        elysia::core::colors::eva_unit01_button_idle);
 }
 
 [[nodiscard]] UiTheme make_evangelion_unit02_theme() noexcept
@@ -1088,7 +1114,9 @@ template<class Enum>
         elysia::core::colors::eva_unit02_sun_yellow
     };
 
-    return finalize_dialog_theme(std::move(theme));
+    return finalize_theme(std::move(theme),
+        elysia::core::colors::eva_unit02_pressed_maroon,elysia::core::colors::eva_unit02_deep_maroon,
+        elysia::core::colors::eva_unit02_button_idle);
 }
 
 [[nodiscard]] UiTheme make_quiet_slate_theme() noexcept
@@ -1261,7 +1289,11 @@ template<class Enum>
         elysia::core::colors::quiet_slate_gray
     };
 
-    return finalize_dialog_theme(std::move(theme));
+    theme.button_styles[to_index(UiButtonVisualRole::Default)].chrome.background.focused =
+        elysia::core::colors::quiet_slate_button_focus;
+    return finalize_theme(std::move(theme),
+        elysia::core::colors::quiet_slate_ink,elysia::core::colors::quiet_slate_charcoal,
+        elysia::core::colors::quiet_slate_button_idle);
 }
 }
 

@@ -19,7 +19,13 @@ public:
 	void pause();
 	void resume();
 
-	bool is_paused() const;
+	[[nodiscard]] double get_wait_time() const noexcept;
+	// A finished one-shot timer reports the current wait time as elapsed.
+	[[nodiscard]] double get_elapsed_time() const noexcept;
+	[[nodiscard]] double get_remaining_time() const noexcept;
+	[[nodiscard]] bool is_one_shot() const noexcept;
+	[[nodiscard]] bool is_finished() const noexcept;
+	[[nodiscard]] bool is_paused() const noexcept;
 	void update(double delta_seconds);
 
 private:

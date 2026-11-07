@@ -174,16 +174,16 @@ void ImGuiDevelopmentOverlay::render(SDL_Renderer& renderer)
 
     ImGui::Render();
     const ImGuiIO& io = ImGui::GetIO();
-    _captured_input = elysia::input::DevelopmentInputCapture::None;
+    _captured_input = elysia::input::InputCapture::None;
     if (io.WantCaptureKeyboard || io.WantTextInput)
     {
         _captured_input = _captured_input
-            | elysia::input::DevelopmentInputCapture::Keyboard;
+            | elysia::input::InputCapture::Keyboard;
     }
     if (io.WantCaptureMouse)
     {
         _captured_input = _captured_input
-            | elysia::input::DevelopmentInputCapture::Pointer;
+            | elysia::input::InputCapture::Pointer;
     }
 
     const SdlRendererState renderer_state = capture_renderer_state(renderer);
@@ -211,14 +211,14 @@ void ImGuiDevelopmentOverlay::shutdown() noexcept
     _panels.clear();
     _pending_operations.clear();
     _next_panel_handle = 1;
-    _captured_input = elysia::input::DevelopmentInputCapture::None;
+    _captured_input = elysia::input::InputCapture::None;
     _sdl_platform_initialized = false;
     _sdl_renderer_initialized = false;
     _frame_started = false;
     _drawing_panels = false;
 }
 
-elysia::input::DevelopmentInputCapture
+elysia::input::InputCapture
 ImGuiDevelopmentOverlay::captured_input() const noexcept
 {
     return _captured_input;

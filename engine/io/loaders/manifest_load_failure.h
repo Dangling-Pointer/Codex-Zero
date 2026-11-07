@@ -78,6 +78,7 @@ struct ManifestLoadFailure
     {
     case JsonFileError::EmptyPath:
     case JsonFileError::FileMissing: code = ManifestLoadError::FileMissing; break;
+    case JsonFileError::ReadFailed:
     case JsonFileError::FilesystemAccess: code = ManifestLoadError::FilesystemAccess; break;
     case JsonFileError::OpenFailed: code = ManifestLoadError::OpenFailed; break;
     case JsonFileError::DuplicateProperty: code = ManifestLoadError::DuplicateKey; break;

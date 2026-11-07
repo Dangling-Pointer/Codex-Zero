@@ -19,6 +19,11 @@ TTF_Font* ResourceService::find_font(std::string_view key) const
 	return ResourceManager::instance()->find_font(key);
 }
 
+bool ResourceService::has_sound(std::string_view key) const
+{
+    return ResourceManager::instance()->has_sound(key);
+}
+
 MIX_Audio* ResourceService::find_sound(std::string_view key) const
 {
 	return ResourceManager::instance()->find_sound(key);

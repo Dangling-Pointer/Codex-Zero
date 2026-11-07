@@ -235,7 +235,7 @@ bool UiDialog::register_with_window(UiWindow& window,UiOverlayOptions options)
     if (is_default_overlay_options(options))
         options = style().overlay_defaults;
 
-    if (size().x <= elysia::core::Vector2::k_epsilon || size().y <= elysia::core::Vector2::k_epsilon)
+    if (size().x <= elysia::core::Vector2::kEpsilon || size().y <= elysia::core::Vector2::kEpsilon)
         options.fallback_size = style().overlay_defaults.fallback_size;
     else
         options.fallback_size = size();

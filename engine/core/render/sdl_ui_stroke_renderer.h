@@ -4,6 +4,7 @@
 
 #include "render_command.h"
 #include "sdl_convert.h"
+#include "sdl_render_boundary.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,9 +14,9 @@ namespace elysia::core
 {
 namespace detail
 {
-inline constexpr float k_ui_pi = 3.14159265358979323846f;
-inline constexpr int k_ui_corner_segments = 8;
-inline constexpr int k_ui_circle_segments = 64;
+inline constexpr float kUiPi = 3.14159265358979323846f;
+inline constexpr int kUiCornerSegments = 8;
+inline constexpr int kUiCircleSegments = 64;
 
 [[nodiscard]] inline float snap_ui_unit_component(float value) noexcept
 {
@@ -41,19 +42,19 @@ struct UiResolvedStrokeWidth
 
 [[nodiscard]] inline float valid_renderer_scale(float scale) noexcept
 {
-    return std::isfinite(scale) && std::fabs(scale) > Vector2::k_epsilon
+    return std::isfinite(scale) && std::fabs(scale) > Vector2::kEpsilon
         ? std::fabs(scale)
         : 1.0f;
 }
 
-inline void ui_output_transform(SDL_Renderer* renderer,float& sx,float& sy,float& ox,float& oy) noexcept
+inline void ui_output_transform(SDL_Renderer* renderer,float& sx,float& sy,float& ox,float& oy)
 {
-    SDL_GetRenderScale(renderer,&sx,&sy);
+    checked_render_operation("SDL_GetRenderScale",[&] { return SDL_GetRenderScale(renderer,&sx,&sy); });
     int width=0,height=0;
     SDL_RendererLogicalPresentation mode{};
-    SDL_GetRenderLogicalPresentation(renderer,&width,&height,&mode);
+    checked_render_operation("SDL_GetRenderLogicalPresentation",[&] { return SDL_GetRenderLogicalPresentation(renderer,&width,&height,&mode); });
     SDL_FRect presentation{};
-    SDL_GetRenderLogicalPresentationRect(renderer,&presentation);
+    checked_render_operation("SDL_GetRenderLogicalPresentationRect",[&] { return SDL_GetRenderLogicalPresentationRect(renderer,&presentation); });
     ox=0; oy=0;
     if (mode != SDL_LOGICAL_PRESENTATION_DISABLED && width > 0 && height > 0)
     {
@@ -62,14 +63,14 @@ inline void ui_output_transform(SDL_Renderer* renderer,float& sx,float& sy,float
     }
     sx=valid_renderer_scale(sx); sy=valid_renderer_scale(sy);
     SDL_Rect viewport{};
-    SDL_GetRenderViewport(renderer,&viewport);
+    checked_render_operation("SDL_GetRenderViewport",[&] { return SDL_GetRenderViewport(renderer,&viewport); });
     ox += viewport.x*sx; oy += viewport.y*sy;
 }
 
 [[nodiscard]] inline UiResolvedStrokeWidth resolve_ui_stroke_width(
     SDL_Renderer* renderer,
     UiStrokeWidth stroke_width
-) noexcept
+)
 {
     stroke_width = normalize_ui_stroke_width(stroke_width);
     if (stroke_width.mode == UiStrokeWidthMode::Logical)
@@ -88,7 +89,7 @@ inline void ui_output_transform(SDL_Renderer* renderer,float& sx,float& sy,float
 [[nodiscard]] inline Vector2 snap_ui_point_to_output_pixel(
     SDL_Renderer* renderer,
     const Vector2& point
-) noexcept
+)
 {
     float sx=1,sy=1,ox=0,oy=0;
     ui_output_transform(renderer,sx,sy,ox,oy);
@@ -100,8 +101,8 @@ inline void ui_output_transform(SDL_Renderer* renderer,float& sx,float& sy,float
     float direction
 ) noexcept
 {
-    constexpr float k_edge_bias = 0.001f;
-    return value + (direction < 0.0f ? -k_edge_bias : k_edge_bias);
+    constexpr float kEdgeBias = 0.001f;
+    return value + (direction < 0.0f ? -kEdgeBias : kEdgeBias);
 }
 
 [[nodiscard]] inline SDL_Vertex make_ui_vertex(
@@ -120,29 +121,22 @@ inline void render_ui_geometry(
     SDL_Renderer* renderer,
     const std::vector<SDL_Vertex>& vertices,
     const std::vector<int>& indices
-) noexcept
+)
 {
     if (vertices.empty() || indices.empty())
         return;
 
-    SDL_BlendMode previous_blend_mode = SDL_BLENDMODE_NONE;
-    SDL_GetRenderDrawBlendMode(renderer,&previous_blend_mode);
-    SDL_SetRenderDrawBlendMode(renderer,SDL_BLENDMODE_BLEND);
-    SDL_RenderGeometry(
-        renderer,
-        nullptr,
-        vertices.data(),
-        static_cast<int>(vertices.size()),
-        indices.data(),
-        static_cast<int>(indices.size()));
-    SDL_SetRenderDrawBlendMode(renderer,previous_blend_mode);
+    checked_render_operation("SDL_RenderGeometry",[&] {
+        return SDL_RenderGeometry(renderer,nullptr,vertices.data(),static_cast<int>(vertices.size()),
+            indices.data(),static_cast<int>(indices.size()));
+    });
 }
 
 inline void render_ui_solid_polygon(
     SDL_Renderer* renderer,
     const std::vector<Vector2>& perimeter,
     SDL_Color color
-) noexcept
+)
 {
     if (perimeter.size() < 3)
         return;
@@ -168,7 +162,7 @@ inline void render_ui_ring(
     const std::vector<Vector2>& outer,
     const std::vector<Vector2>& inner,
     SDL_Color color
-) noexcept
+)
 {
     if (outer.size() < 3 || outer.size() != inner.size())
         return;
@@ -229,10 +223,10 @@ inline void append_ui_arc(
     float end_angle
 )
 {
-    for (int i = 0; i <= k_ui_corner_segments; ++i)
+    for (int i = 0; i <= kUiCornerSegments; ++i)
     {
         const float t = static_cast<float>(i)
-            / static_cast<float>(k_ui_corner_segments);
+            / static_cast<float>(kUiCornerSegments);
         const float angle = start_angle + (end_angle - start_angle) * t;
         const float cosine = snap_ui_unit_component(std::cos(angle));
         const float sine = snap_ui_unit_component(std::sin(angle));
@@ -255,26 +249,26 @@ inline void append_ui_arc(
     radius_y = std::clamp(radius_y,0.0f,0.5f * std::max(0.0f,bottom - top));
 
     std::vector<Vector2> perimeter;
-    perimeter.reserve(static_cast<std::size_t>(4 * (k_ui_corner_segments + 1)));
+    perimeter.reserve(static_cast<std::size_t>(4 * (kUiCornerSegments + 1)));
     append_ui_arc(
         perimeter,{ left + radius_x,top + radius_y },
-        radius_x,radius_y,k_ui_pi,1.5f * k_ui_pi);
+        radius_x,radius_y,kUiPi,1.5f * kUiPi);
     append_ui_arc(
         perimeter,{ right - radius_x,top + radius_y },
-        radius_x,radius_y,-0.5f * k_ui_pi,0.0f);
+        radius_x,radius_y,-0.5f * kUiPi,0.0f);
     append_ui_arc(
         perimeter,{ right - radius_x,bottom - radius_y },
-        radius_x,radius_y,0.0f,0.5f * k_ui_pi);
+        radius_x,radius_y,0.0f,0.5f * kUiPi);
     append_ui_arc(
         perimeter,{ left + radius_x,bottom - radius_y },
-        radius_x,radius_y,0.5f * k_ui_pi,k_ui_pi);
+        radius_x,radius_y,0.5f * kUiPi,kUiPi);
     return perimeter;
 }
 
 inline void render_ui_rect_stroke(
     SDL_Renderer* renderer,
     const UiRenderCommand& command
-) noexcept
+)
 {
     Vector2 top_left = snap_ui_point_to_output_pixel(
         renderer,command.screen_rect.top_left());
@@ -310,7 +304,7 @@ inline void render_ui_rect_stroke(
 inline void render_ui_rounded_rect_stroke(
     SDL_Renderer* renderer,
     const UiRenderCommand& command
-) noexcept
+)
 {
     Vector2 top_left = snap_ui_point_to_output_pixel(
         renderer,command.screen_rect.top_left());
@@ -356,11 +350,11 @@ inline void render_ui_rounded_rect_stroke(
 )
 {
     std::vector<Vector2> perimeter;
-    perimeter.reserve(k_ui_circle_segments);
-    for (int i = 0; i < k_ui_circle_segments; ++i)
+    perimeter.reserve(kUiCircleSegments);
+    for (int i = 0; i < kUiCircleSegments; ++i)
     {
-        const float angle = 2.0f * k_ui_pi * static_cast<float>(i)
-            / static_cast<float>(k_ui_circle_segments);
+        const float angle = 2.0f * kUiPi * static_cast<float>(i)
+            / static_cast<float>(kUiCircleSegments);
         const float cosine = snap_ui_unit_component(std::cos(angle));
         const float sine = snap_ui_unit_component(std::sin(angle));
         perimeter.emplace_back(
@@ -373,7 +367,7 @@ inline void render_ui_rounded_rect_stroke(
 inline void render_ui_circle_stroke(
     SDL_Renderer* renderer,
     const UiRenderCommand& command
-) noexcept
+)
 {
     if (!std::isfinite(command.circle_radius) || command.circle_radius <= 0.0f)
         return;
@@ -420,7 +414,7 @@ inline void render_ui_circle_stroke(
 inline void render_ui_line_stroke(
     SDL_Renderer* renderer,
     const UiRenderCommand& command
-) noexcept
+)
 {
     const Vector2 start = snap_ui_point_to_output_pixel(
         renderer,command.line_start);
@@ -433,7 +427,7 @@ inline void render_ui_line_stroke(
     const float half_width = 0.5f * width.radial();
     const SDL_Color color = to_sdl_color(command.color);
 
-    if (length <= Vector2::k_epsilon)
+    if (length <= Vector2::kEpsilon)
     {
         render_ui_solid_polygon(
             renderer,

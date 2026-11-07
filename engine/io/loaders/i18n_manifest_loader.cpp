@@ -30,20 +30,35 @@ std::expected<I18nManifest,ManifestLoadFailure> I18nManifestLoader::load(
 			"Load i18n manifest failed: root is not an object.");
 
 	I18nManifest parsed_manifest;
-	if (!loader.get("default_language", parsed_manifest.default_language)
-		|| parsed_manifest.default_language.empty())
-		return fail(ManifestLoadError::MissingField,
-			"Load i18n manifest failed: default_language is missing or invalid.",
-			"/default_language");
-
-	if (!loader.get_array("languages", parsed_manifest.languages)
-		|| parsed_manifest.languages.empty())
-		return fail(ManifestLoadError::MissingField,
-			"Load i18n manifest failed: languages is missing or invalid.","/languages");
-
-	if (!loader.root().contains("file") || !loader.root().at("file").is_array())
-		return fail(ManifestLoadError::MissingField,
-			"Load i18n manifest failed: file is missing or not an array.","/file");
+	const json& root = loader.root();
+	if (!root.contains("default_language"))
+		return fail(ManifestLoadError::MissingField,"Default language is missing.","/default_language");
+	if (!root.at("default_language").is_string())
+		return fail(ManifestLoadError::InvalidField,"Default language must be a string.","/default_language");
+	parsed_manifest.default_language = root.at("default_language").get<std::string>();
+	if (parsed_manifest.default_language.empty())
+		return fail(ManifestLoadError::InvalidValue,"Default language must not be empty.","/default_language");
+	if (!root.contains("languages"))
+		return fail(ManifestLoadError::MissingField,"Languages are missing.","/languages");
+	if (!root.at("languages").is_array())
+		return fail(ManifestLoadError::InvalidField,"Languages must be an array.","/languages");
+	std::size_t language_index = 0;
+	for (const json& language : root.at("languages"))
+	{
+		const std::string pointer = "/languages/" + std::to_string(language_index++);
+		if (!language.is_string())
+			return fail(ManifestLoadError::InvalidField,"Language must be a string.",pointer);
+		const std::string value = language.get<std::string>();
+		if (value.empty())
+			return fail(ManifestLoadError::InvalidValue,"Language must not be empty.",pointer);
+		parsed_manifest.languages.push_back(value);
+	}
+	if (parsed_manifest.languages.empty())
+		return fail(ManifestLoadError::MissingContent,"Languages must not be empty.","/languages");
+	if (!root.contains("file"))
+		return fail(ManifestLoadError::MissingField,"File list is missing.","/file");
+	if (!root.at("file").is_array())
+		return fail(ManifestLoadError::InvalidField,"File list must be an array.","/file");
 
 	std::size_t file_index = 0;
 	for (const json& file_node : loader.root().at("file"))

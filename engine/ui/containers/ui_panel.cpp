@@ -181,7 +181,12 @@ bool UiPanel::on_ui_input_event(const UiInputEvent& event)
     ensure_valid_focus();
 
     if (is_mouse_position_event(event))
-        sync_delegated_owner_scope_target(find_registered_target_at(event.mouse_x,event.mouse_y));
+    {
+        UiControl* target_at_pointer = find_registered_target_at(event.mouse_x,event.mouse_y);
+        if (event.type == UiInputEventType::PointerPressed && event.control == elysia::input::RawInputControl::MouseLeft)
+            (void)set_focused_target_internal(target_at_pointer);
+        sync_delegated_owner_scope_target(target_at_pointer);
+    }
 
     sync_child_scope_focus();
     apply_focus_state();
@@ -190,7 +195,7 @@ bool UiPanel::on_ui_input_event(const UiInputEvent& event)
     {
         if (UiFocusScope* scope = delegated_owner_scope_of(target))
         {
-            const bool should_delegate_confirm = event.action == UiAction::Confirm
+            const bool should_delegate_confirm = (event.action == UiAction::Confirm || event.action == UiAction::Cancel)
                 && (event.type == UiInputEventType::ActionPressed || event.type == UiInputEventType::ActionReleased);
             const bool should_delegate_navigation = event.type == UiInputEventType::ActionPressed
                 && is_navigation_action(event.action);

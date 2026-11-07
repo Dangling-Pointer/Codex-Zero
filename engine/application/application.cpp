@@ -1,5 +1,6 @@
 #include "application.h"
 #include "../builtin/resources/builtin_resources.h"
+#include "../builtin/audio/builtin_music_player.h"
 
 #include "composition/application_scene_composition.h"
 #include "lifecycle/application_event_boundary.h"
@@ -11,6 +12,7 @@
 #include "presentation/application_window_settings.h"
 
 #include "../builtin/resources/builtin_asset_catalog.h"
+#include "../builtin/scenes/application_failure_scene_payload.h"
 #include "../audio/audio_service.h"
 #include "../bootstrap/bootstrapper.h"
 #include "../core/time.h"
@@ -22,15 +24,18 @@
 #include "../resources/resource_service.h"
 #include "../save/save_service.h"
 #include "../tools/logger.h"
+#include "../tools/termination_manager.h"
 #include "../ui/style/ui_theme_defaults.h"
 
 #include <cmath>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <new>
 #include <utility>
 
 #include <SDL3_image/SDL_image.h>
+#include "../core/render/sdl_render_boundary.h"
 #include <SDL3_mixer/SDL_mixer.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
@@ -136,6 +141,43 @@ bool Application::initialize(
     char** argv,
     const IGameModule& game_module)
 {
+    try
+    {
+        return initialize_impl(argc, argv, game_module);
+    }
+    catch (const std::bad_alloc&)
+    {
+        constexpr std::string_view message = "Out of memory during application startup.";
+        elysia::tools::Logger::instance()->error("startup", message);
+        elysia::tools::TerminationManager::instance()->request_termination(
+            elysia::tools::TerminationReason::UnhandledException, "startup", message);
+    }
+    catch (const std::exception& error)
+    {
+        elysia::tools::Logger::instance()->error("startup", error.what());
+        elysia::tools::TerminationManager::instance()->request_termination(
+            elysia::tools::TerminationReason::UnhandledException, "startup", error.what());
+    }
+    catch (...)
+    {
+        constexpr std::string_view message = "Unknown exception during application startup.";
+        elysia::tools::Logger::instance()->error("startup", message);
+        elysia::tools::TerminationManager::instance()->request_termination(
+            elysia::tools::TerminationReason::UnhandledException, "startup", message);
+    }
+    constexpr const char* fallback = "The game could not start. See the log for details.";
+    elysia::tools::Logger::instance()->error("startup",fallback);
+    if (!SDL_GetHintBoolean("ELYSIA_SUPPRESS_ERROR_DIALOGS",false))
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,"Game Start Error",fallback,_window);
+    (void)shutdown();
+    return false;
+}
+
+bool Application::initialize_impl(
+    int argc,
+    char** argv,
+    const IGameModule& game_module)
+{
     elysia::tools::Logger::instance()->initialize_console();
 
     _active = true;
@@ -150,6 +192,7 @@ bool Application::initialize(
     {
         descriptor = describe_game_module(game_module);
     }
+    catch (const std::bad_alloc&) { throw; }
     catch (const std::exception& error)
     {
         return startup_fail(
@@ -200,7 +243,8 @@ bool Application::initialize(
             elysia::io::PathManager::instance()->saves());
         !save_result)
     {
-        return startup_fail("save",save_result.error().message);
+        return startup_fail("save",elysia::core::format_failure_diagnostic(
+            save_result.error().diagnostic,"SAVE-INITIALIZE","save"),save_result.error().diagnostic.origin);
     }
 
     if (bootstrap_output.warning)
@@ -222,6 +266,7 @@ bool Application::initialize(
         _development_overlay_host.set_overlay(
             game_module.create_development_overlay());
     }
+    catch (const std::bad_alloc&) { throw; }
     catch (const std::exception& error)
     {
         return startup_fail(
@@ -247,6 +292,7 @@ bool Application::initialize(
                     "development_overlay", overlay_result.error());
             }
         }
+        catch (const std::bad_alloc&) { throw; }
         catch (const std::exception& error)
         {
             return startup_fail(
@@ -268,14 +314,17 @@ bool Application::initialize(
     if (const auto builtin_asset_result = elysia::builtin::BuiltinResources::instance()->initialize(
             _renderer,
             builtin_asset_catalog,
-            resolved_font_settings->engine_point_sizes(),
-            runtime_settings.user.audio);
+            resolved_font_settings->engine_point_sizes());
         !builtin_asset_result)
     {
         return startup_fail(
             "builtin",
             "Built-in asset initialization failed: " + builtin_asset_result.error());
     }
+    if (!check_startup_step(
+            elysia::builtin::BuiltinMusicPlayer::instance()->initialize(runtime_settings.user.audio),
+            "builtin", "Built-in music player initialization failed"))
+        return false;
     if (auto localization_result =
         elysia::localization::LocalizationManager::instance()->initialize(
         _renderer,
@@ -313,7 +362,7 @@ bool Application::initialize(
         {
             ELYSIA_LOG_WARN("application",
                 "Localization warning: normalize language in config failed: "
-                << language_result.error().message);
+                << elysia::core::format_failure_diagnostic(language_result.error().diagnostic,"CONFIG-APPLY","config"));
         }
         else if (const auto save_result =
             elysia::config::UserConfigService::instance()->save_user_config();
@@ -321,7 +370,7 @@ bool Application::initialize(
         {
             ELYSIA_LOG_WARN("application",
                 "Localization warning: save normalized language failed: "
-                << save_result.error().message);
+                << elysia::core::format_failure_diagnostic(save_result.error().diagnostic,"CONFIG-SAVE","config"));
         }
     }
 
@@ -345,7 +394,13 @@ bool Application::initialize(
         descriptor.logical_height,
         &_font_resolver,
         development_panels);
-    _scene_manager.set_runtime_context(*_scene_runtime_context);
+    _scene_manager.initialize(
+        *_scene_runtime_context,
+        [](const elysia::scene::SceneBoundaryFailure& failure) {
+            auto route = elysia::builtin::make_application_failure_route(failure);
+            route.reload_mode = elysia::scene::SceneReloadMode::Recreate;
+            return route;
+        });
 
     return enter_initial_scene(game_module,descriptor);
 }
@@ -390,20 +445,14 @@ bool Application::initialize_runtime(
     if (!check_startup_step(_window != nullptr,"platform","SDL_CreateWindow Error"))
         return false;
 
-    if (user_settings.window.mode
-            == elysia::config::WindowMode::BorderlessFullscreen
-        && !SDL_SetWindowFullscreen(_window,SDL_WINDOW_FULLSCREEN))
-    {
-        ELYSIA_LOG_WARN(
-            "application",
-            "Failed to enter borderless fullscreen: " << SDL_GetError());
-        SDL_ClearError();
-        SDL_SetWindowSize(
-            _window,
-            user_settings.window.windowed_size.width,
-            user_settings.window.windowed_size.height);
-        SDL_SetWindowPosition(_window,SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED);
-    }
+    const auto startup_window = detail::apply_startup_window_settings(
+        user_settings.window,detail::make_sdl_window_operations(_window));
+    if (!startup_window)
+        return startup_fail("platform",elysia::core::format_failure_diagnostic(
+            startup_window.error(),"STARTUP-WINDOW","platform"),startup_window.error().origin);
+    if (*startup_window)
+        elysia::tools::Logger::instance()->warn("application",elysia::core::format_failure_diagnostic(
+            **startup_window,"STARTUP-WINDOW","platform"),(**startup_window).origin);
 
     _renderer = SDL_CreateGPURenderer(nullptr,_window);
     if (!check_startup_step(_renderer != nullptr,"platform","SDL GPU renderer creation failed"))
@@ -441,6 +490,15 @@ bool Application::enter_initial_scene(
             game_module,
             descriptor);
     }
+    catch (const elysia::core::RenderBackendError&)
+    {
+        const auto failure = std::current_exception();
+        (void)run_event_boundary("scene",[&] { std::rethrow_exception(failure); });
+        log_published_termination(elysia::tools::TerminationManager::instance()->termination_info());
+        (void)shutdown();
+        return false;
+    }
+    catch (const std::bad_alloc&) { throw; }
     catch (const std::exception& error)
     {
         return startup_fail(
@@ -515,7 +573,6 @@ ApplicationRunResult Application::run()
                     _normal_exit_requested = true;
             }
 
-            _input_system.end_frame();
         }))
         {
             stop_after_boundary_failure();
@@ -524,10 +581,7 @@ ApplicationRunResult Application::run()
         if (resolve_exit())
             break;
 
-        if (!run_event_boundary("input",[this]()
-        {
-            _scene_manager.on_input(_input_system.frame(),_input_system.events());
-        }))
+        if (!run_event_boundary("input", [this]() { _scene_manager.on_input(_input_system.snapshot()); }))
         {
             stop_after_boundary_failure();
             break;
@@ -551,8 +605,13 @@ ApplicationRunResult Application::run()
         if (resolve_exit())
             break;
 
-        SDL_SetRenderDrawColor(_renderer,0,0,0,255);
-        SDL_RenderClear(_renderer);
+        if (!run_event_boundary("render_begin",[this] {
+            elysia::core::require_render_success(elysia::core::begin_render_frame(_renderer));
+        }))
+        {
+            stop_after_boundary_failure();
+            break;
+        }
 
         if (!run_event_boundary("render",[this]()
         {
@@ -568,7 +627,13 @@ ApplicationRunResult Application::run()
         if (resolve_exit())
             break;
 
-        SDL_RenderPresent(_renderer);
+        if (!run_event_boundary("render_present",[this] {
+            elysia::core::require_render_success(elysia::core::present_render_frame(_renderer));
+        }))
+        {
+            stop_after_boundary_failure();
+            break;
+        }
         if (resolve_exit())
             break;
 
@@ -623,6 +688,7 @@ bool Application::shutdown() noexcept
     cleanup("application_shutdown",[&] { elysia::audio::AudioService::instance()->shutdown(); });
     cleanup("application_shutdown",[&] { elysia::loading::clear_loaded_content(); });
     cleanup("application_shutdown",[&] { _font_resolver.shutdown(); });
+    cleanup("application_shutdown",[&] { elysia::builtin::BuiltinMusicPlayer::instance()->shutdown(); });
     cleanup("application_shutdown",[&] { elysia::builtin::BuiltinResources::instance()->shutdown(); });
     if (_user_config_handler_registered)
     {
@@ -663,17 +729,38 @@ void Application::on_scene_manager_quit_requested()
     _normal_exit_requested = true;
 }
 
+void Application::on_scene_manager_fault(
+    const elysia::scene::SceneBoundaryFailure& failure)
+{
+    try
+    {
+        elysia::tools::TerminationManager::instance()->request_termination(
+            elysia::tools::TerminationReason::FatalRuntimeFailure,"scene",
+            elysia::core::format_failure_diagnostic(elysia::scene::to_failure_diagnostic(failure),"APPLICATION-FATAL","scene"),
+            failure.diagnostic.origin);
+    }
+    catch (...)
+    {
+        elysia::tools::Logger::instance()->error(
+            "scene",failure.diagnostic.message,failure.diagnostic.origin);
+        elysia::tools::TerminationManager::instance()->request_termination(
+            elysia::tools::TerminationReason::FatalRuntimeFailure,"scene",
+            failure.diagnostic.message,failure.diagnostic.origin);
+    }
+}
+
 namespace
 {
 std::unexpected<elysia::config::UserConfigFailure> runtime_apply_failure(
     const char* setting,
-    const std::string& message)
+    const std::string& message,
+    std::source_location origin = std::source_location::current())
 {
-    return std::unexpected(elysia::config::UserConfigFailure{
+    return std::unexpected(elysia::config::make_user_config_failure(
         elysia::config::UserConfigError::RuntimeApplyFailed,
         setting,
-        message
-    });
+        elysia::core::make_failure_diagnostic(message,{},{},origin)
+    ));
 }
 }
 
@@ -681,7 +768,7 @@ std::expected<void,elysia::config::UserConfigFailure>
 Application::apply_master_volume(int value)
 {
     elysia::audio::AudioService::instance()->set_master_volume(value);
-    elysia::builtin::BuiltinResources::instance()->set_master_volume(value);
+    elysia::builtin::BuiltinMusicPlayer::instance()->set_master_volume(value);
     return {};
 }
 
@@ -689,7 +776,7 @@ std::expected<void,elysia::config::UserConfigFailure>
 Application::apply_music_volume(int value)
 {
     elysia::audio::AudioService::instance()->set_music_volume(value);
-    elysia::builtin::BuiltinResources::instance()->set_music_volume(value);
+    elysia::builtin::BuiltinMusicPlayer::instance()->set_music_volume(value);
     return {};
 }
 
@@ -697,7 +784,6 @@ std::expected<void,elysia::config::UserConfigFailure>
 Application::apply_sound_volume(int value)
 {
     elysia::audio::AudioService::instance()->set_sound_volume(value);
-    elysia::builtin::BuiltinResources::instance()->set_sound_volume(value);
     return {};
 }
 
@@ -707,7 +793,9 @@ Application::apply_language(std::string_view language)
     if (auto result = ELYSIA_LOCALIZATION->set_language(std::string(language));
         !result)
     {
-        return runtime_apply_failure("language",result.error().diagnostic.message);
+        return std::unexpected(elysia::config::make_user_config_failure(
+            elysia::config::UserConfigError::RuntimeApplyFailed,"language",
+            result.error().diagnostic));
     }
 
     return {};
@@ -733,33 +821,21 @@ Application::apply_window_settings(
     if (!_window)
         return runtime_apply_failure("window_settings","Application window is unavailable.");
 
-    const auto result = detail::apply_window_settings(settings,
-        detail::ApplicationWindowOperations{
-            .set_fullscreen = [this](std::uint32_t flags)
-            {
-                return SDL_SetWindowFullscreen(_window,flags != 0) ? 0 : -1;
-            },
-            .set_size = [this](int width,int height)
-            {
-                SDL_SetWindowSize(_window,width,height);
-            },
-            .center = [this]()
-            {
-                SDL_SetWindowPosition(
-                    _window,
-                    SDL_WINDOWPOS_CENTERED,
-                    SDL_WINDOWPOS_CENTERED);
-            },
-            .error_message = []()
-            {
-                return std::string(SDL_GetError());
-            }
-        });
+    const auto operations = detail::make_sdl_window_operations(_window);
+    if (auto valid = detail::validate_window_settings(settings,operations); !valid)
+        return std::unexpected(elysia::config::make_user_config_failure(
+            elysia::config::UserConfigError::RuntimeApplyFailed,"window_settings",valid.error()));
+    auto previous = detail::capture_window_snapshot(
+        elysia::config::UserConfigService::instance()->user_config().window_settings(),operations);
+    if (!previous)
+        return std::unexpected(elysia::config::make_user_config_failure(
+            elysia::config::UserConfigError::RuntimeApplyFailed,"window_settings",previous.error()));
+    const auto result = detail::apply_window_settings_transactional(settings,*previous,operations);
     if (!result)
     {
-        return runtime_apply_failure(
-            "window_settings",
-            result.error());
+        return std::unexpected(elysia::config::make_user_config_failure(
+            elysia::config::UserConfigError::RuntimeApplyFailed,"window_settings",
+            result.error()));
     }
     return {};
 }

@@ -70,6 +70,11 @@ public:
     [[nodiscard]] std::optional<elysia::typography::FontSource>
         font_source_override() const noexcept;
 
+    // Changes only the font language; translation lookup still follows the UI locale.
+    void set_font_language_override(std::string language);
+    void clear_font_language_override() noexcept;
+    [[nodiscard]] const std::optional<std::string>& font_language_override() const noexcept;
+
     void set_text_fit_mode(UiLabelTextFitMode mode) noexcept;
     [[nodiscard]] UiLabelTextFitMode text_fit_mode() const noexcept;
 
@@ -89,6 +94,7 @@ private:
     elysia::typography::UiTypographyRole _typography_role =
         elysia::typography::UiTypographyRole::Label;
     std::optional<elysia::typography::FontSource> _font_source_override;
+    std::optional<std::string> _font_language_override;
     UiLabelTextFitMode _text_fit_mode = UiLabelTextFitMode::ShrinkToFit;
     TextHorizontalAlign _horizontal_align = TextHorizontalAlign::Left;
     TextVerticalAlign _vertical_align = TextVerticalAlign::Top;

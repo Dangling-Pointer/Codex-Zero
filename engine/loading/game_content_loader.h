@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <deque>
 #include <expected>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -62,6 +63,10 @@ public:
 	GameContentLoaderState state() const;
 
 private:
+    friend struct GameContentLoaderTestAccess;
+    enum class WorkerStage { Starting, Preparing, Publishing };
+    // Internal injection seam; unused by normal loaders.
+    void (*_worker_probe)(WorkerStage,std::size_t) = nullptr;
 	template<typename T>
 	struct PrepareOutcome
 	{
@@ -76,8 +81,10 @@ private:
 	bool initialize_streaming_work();
 	void reset_streaming_state();
 	void start_worker_threads();
+	void request_worker_stop();
 	void shutdown_worker_threads();
 	void worker_loop();
+    bool handle_worker_exception();
 	void dispatch_prepare_jobs();
 	void drain_completed_prepare_results();
 	bool commit_ready_streaming_results();
@@ -114,6 +121,14 @@ private:
 	std::vector<std::thread> _worker_threads;
 
 	std::mutex _completed_results_mutex;
+    struct WorkerException
+    {
+        std::exception_ptr cause;
+        WorkerStage stage;
+        std::optional<PrepareJob> job;
+        std::source_location origin;
+    };
+    std::optional<WorkerException> _worker_exception;
 	std::deque<PrepareOutcome<elysia::resources::SurfaceLoadResult>> _completed_texture_results;
 	std::deque<PrepareOutcome<elysia::resources::AtlasFramePreparedResult>> _completed_atlas_frame_results;
 	std::deque<PrepareOutcome<elysia::resources::SurfaceLoadResult>> _ready_texture_results;

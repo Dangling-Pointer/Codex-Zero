@@ -5,8 +5,7 @@ namespace elysia::physics
 {
 struct PhysicsWorldConfig
 {
-    double fixed_delta_seconds = 1.0 / 60.0;
-    std::uint32_t max_steps_per_advance = 8, sub_steps = 4;
+    std::uint32_t sub_steps = 4;
     float units_per_meter = 100;
     elysia::core::Vector2 gravity{};
     float contact_normal_threshold = 0.5f;

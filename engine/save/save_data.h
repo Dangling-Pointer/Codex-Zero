@@ -93,23 +93,23 @@ std::expected<bool,SaveFailure> SaveData::set(std::string key,T&& value)
     using Value = std::remove_cvref_t<T>;
     if (key.empty())
     {
-        return std::unexpected(SaveFailure{
+        return std::unexpected(make_save_failure(
             SaveError::InvalidKey,
             {},
             {},
             "SaveData key must not be empty."
-        });
+        ));
     }
 
     SaveValue stored = Value(std::forward<T>(value));
     if (!value_is_valid(stored))
     {
-        return std::unexpected(SaveFailure{
+        return std::unexpected(make_save_failure(
             SaveError::InvalidValue,
             {},
             key,
             "SaveData floating-point values must be finite."
-        });
+        ));
     }
 
     const auto existing = _values.find(key);
@@ -128,23 +128,23 @@ std::expected<std::remove_cvref_t<T>,SaveFailure> SaveData::get(
     const auto iterator = _values.find(key);
     if (iterator == _values.end())
     {
-        return std::unexpected(SaveFailure{
+        return std::unexpected(make_save_failure(
             SaveError::KeyNotFound,
             {},
             std::string(key),
             "SaveData key was not found."
-        });
+        ));
     }
 
     if (const Value* value = std::get_if<Value>(&iterator->second))
         return *value;
 
-    return std::unexpected(SaveFailure{
+    return std::unexpected(make_save_failure(
         SaveError::TypeMismatch,
         {},
         std::string(key),
         "SaveData type mismatch: expected " + std::string(type_name<Value>())
             + ", found " + std::string(value_type_name(iterator->second)) + "."
-    });
+    ));
 }
 }

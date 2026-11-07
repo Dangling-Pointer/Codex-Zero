@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../input/development_input_capture.h"
+#include "../input/input_capture.h"
 
 #include <cstdint>
 #include <expected>
@@ -55,7 +55,7 @@ public:
     virtual void render(SDL_Renderer& renderer) = 0;
     virtual void shutdown() noexcept = 0;
 
-    [[nodiscard]] virtual elysia::input::DevelopmentInputCapture
+    [[nodiscard]] virtual elysia::input::InputCapture
         captured_input() const noexcept = 0;
 };
 }

@@ -83,15 +83,15 @@ elysia::ui::SettingsPanelOptions make_panel_options(
     };
 }
 
-std::string describe_failure(const elysia::config::UserConfigFailure& failure)
+void log_failure(const elysia::config::UserConfigCommitFailure& failure)
 {
-    if (!failure.message.empty())
-        return failure.message;
-
-    if (!failure.setting_name.empty())
-        return "Failed to apply setting: " + failure.setting_name;
-
-    return "Failed to apply settings.";
+    const auto diagnostic = elysia::config::to_failure_diagnostic(failure);
+    const auto report = elysia::core::format_failure_diagnostic(
+        diagnostic,"SETTINGS-APPLY","settings");
+    elysia::tools::Logger::instance()->log_stream(
+        elysia::tools::LogLevel::Error,"settings",[&](std::ostream& output) {
+            output << report;
+        },diagnostic.origin);
 }
 }
 
@@ -139,7 +139,7 @@ void SettingsScene::on_exit()
     }
 }
 
-void SettingsScene::reset()
+void SettingsScene::on_reset()
 {
     _paused = false;
     _transitioning = false;
@@ -160,7 +160,7 @@ void SettingsScene::build_ui()
     if (!_window)
         throw std::runtime_error("SettingsScene could not create its UiWindow.");
 
-    const float panel_width = std::min(700.0f,static_cast<float>(logical_width) - 32.0f);
+    const float panel_width = std::min(732.0f,static_cast<float>(logical_width) - 32.0f);
     const float panel_height = std::min(680.0f,static_cast<float>(logical_height) - 32.0f);
 
     auto panel = std::make_unique<elysia::ui::SettingsPanel>(
@@ -242,20 +242,14 @@ void SettingsScene::save_draft(const elysia::ui::SettingsPanelDraft& draft)
         return;
     }
 
-    std::string message = describe_failure(result.error().cause);
-    if (result.error().rollback_failure)
-    {
-        const std::string rollback_message =
-            describe_failure(*result.error().rollback_failure);
-        ELYSIA_LOG_ERROR("settings","Settings rollback failed: " << rollback_message);
-        message += " Rollback failed: " + rollback_message;
-    }
+    log_failure(result.error());
 
     // The service snapshot is authoritative after either a complete rollback
     // or a partial rollback failure.
     _baseline_state = config_service->user_config().runtime_state();
     _settings_panel->set_draft(make_draft(_baseline_state.settings));
-    _settings_panel->set_status_message(std::move(message),true);
+    _settings_panel->set_status_content(
+        elysia::ui::ui_text_key("engine.settings.status.save_failed"),true);
 }
 
 void SettingsScene::return_to_caller()

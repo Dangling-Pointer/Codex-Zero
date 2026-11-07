@@ -40,8 +40,20 @@ public:
     UiTextInput(const elysia::core::Vector2& center,const elysia::core::Vector2& size,UiFromCenterTag,int order = 0) noexcept;
     ~UiTextInput() override;
 
+    void cancel_input_interaction() noexcept override
+    {
+        clear_pushed_state();
+        _composition_text.clear();
+        _composition_start = 0;
+        _composition_length = 0;
+    }
     void reset() noexcept override;
 
+    elysia::input::InputCapture input_capture() const noexcept override
+    {
+        return is_focused() && is_enabled() ? elysia::input::InputCapture::Keyboard
+                                            : elysia::input::InputCapture::None;
+    }
     void set_enabled(bool enabled) override;
     void set_focused(bool focused) override;
 

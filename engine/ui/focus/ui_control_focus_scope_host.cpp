@@ -194,7 +194,7 @@ bool UiControlFocusScopeHost::on_ui_input_event(const UiInputEvent& event)
         }
         handled = dispatch_input_to_children(event);
     }
-    else if ((event.action == UiAction::Confirm)
+    else if ((event.action == UiAction::Confirm || event.action == UiAction::Cancel)
         && (event.type == UiInputEventType::ActionPressed || event.type == UiInputEventType::ActionReleased))
     {
         if (is_control_usable(_focused_target))

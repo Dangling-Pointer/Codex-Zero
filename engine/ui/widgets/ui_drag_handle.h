@@ -65,6 +65,10 @@ public:
     UiDragHandle(const elysia::core::Vector2& center,const elysia::core::Vector2& size,UiFromCenterTag,const UiDragHandleConfig& config,int order = 0) noexcept;
     ~UiDragHandle() override = default;
 
+    void cancel_input_interaction() noexcept override
+    {
+        cancel_drag();
+    }
     void reset() noexcept override;
     void set_enabled(bool enabled) override;
     void set_focused(bool focused) override;

@@ -1,3 +1,4 @@
+#include "engine/builtin/audio/builtin_music_player.h"
 #include "elysia_realm_scene.h"
 
 #include "../../builtin/resources/builtin_resources.h"
@@ -45,7 +46,7 @@ void ElysiaRealmScene::on_enter(const elysia::scene::ScenePayload& payload)
 
 void ElysiaRealmScene::on_exit()
 {
-    elysia::builtin::BuiltinResources::instance()->stop_music();
+    elysia::builtin::BuiltinMusicPlayer::instance()->stop();
 
     _paused = false;
     if (_root_window && !_root_window->is_destroyed())
@@ -55,7 +56,7 @@ void ElysiaRealmScene::on_exit()
     }
 }
 
-void ElysiaRealmScene::reset()
+void ElysiaRealmScene::on_reset()
 {
     _paused = false;
     _return_route = {};

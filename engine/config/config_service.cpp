@@ -105,8 +105,7 @@ std::expected<std::int64_t,ConfigAccessFailure> ConfigService::get_int(std::stri
         if (node->value.is_number_unsigned()
             && node->value.get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
             return std::unexpected("Config integer is outside int64 range: " + node->origin.describe());
-        try { return node->value.get<std::int64_t>(); }
-        catch (...) { return std::unexpected("Config integer is outside int64 range: " + node->origin.describe()); }
+        return node->value.get<std::int64_t>();
     }());
 }
 

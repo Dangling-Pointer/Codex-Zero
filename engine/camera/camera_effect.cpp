@@ -7,7 +7,7 @@ namespace elysia::camera
 {
 namespace
 {
-constexpr double k_pi = 3.14159265358979323846;
+constexpr double kPi = 3.14159265358979323846;
 }
 
 CameraShakeEffect::CameraShakeEffect(const CameraShakeParams& params) noexcept
@@ -37,7 +37,7 @@ elysia::core::Vector2 CameraShakeEffect::update(double delta_seconds)
         ? 1.0
         : std::clamp(_elapsed_seconds / _params.duration_seconds, 0.0, 1.0);
     const float envelope = static_cast<float>(1.0 - progress);
-    const double angle = _elapsed_seconds * _params.frequency_hz * (k_pi * 2.0);
+    const double angle = _elapsed_seconds * _params.frequency_hz * (kPi * 2.0);
 
     return elysia::core::Vector2(
         _params.amplitude.x * static_cast<float>(std::sin(angle)) * envelope,

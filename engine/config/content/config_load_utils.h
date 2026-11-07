@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../config_types.h"
+#include "../../io/json/strict_json.h"
 #include "../../io/path/path_manager.h"
 
 #include <filesystem>
@@ -40,4 +41,26 @@ inline ConfigLoadFailure make_config_load_failure(ConfigLoadError error,std::str
 {
     return {error,std::move(message),std::move(first),std::move(second),origin};
 }
+inline ConfigLoadError config_error_from_json(io::JsonFileError error) noexcept
+{
+    switch (error)
+    {
+    case io::JsonFileError::FileMissing: return ConfigLoadError::FileMissing;
+    case io::JsonFileError::FilesystemAccess:
+    case io::JsonFileError::ReadFailed: return ConfigLoadError::FilesystemAccess;
+    case io::JsonFileError::DuplicateProperty: return ConfigLoadError::DuplicateKey;
+    case io::JsonFileError::EmptyPath:
+    case io::JsonFileError::OpenFailed:
+    case io::JsonFileError::ParseFailed: return ConfigLoadError::OpenFailed;
+    }
+    return ConfigLoadError::OpenFailed;
+}
+
+inline ConfigLoadFailure config_failure_from_json(const io::JsonFileFailure& failure,ConfigOrigin origin)
+{
+    origin.json_pointer = failure.json_pointer;
+    return make_config_load_failure(config_error_from_json(failure.code),failure.message,
+        std::move(origin),{},failure.origin);
+}
+
 }

@@ -12,22 +12,28 @@ namespace elysia::input
 {
 class InputActionId
 {
-public:
+  public:
     InputActionId() = default;
     explicit InputActionId(std::string_view value);
 
-    [[nodiscard]] const std::string& value() const noexcept { return _value; }
-    [[nodiscard]] bool valid() const noexcept { return !_value.empty(); }
+    [[nodiscard]] const std::string &value() const noexcept
+    {
+        return _value;
+    }
+    [[nodiscard]] bool valid() const noexcept
+    {
+        return !_value.empty();
+    }
 
-    friend bool operator==(const InputActionId&, const InputActionId&) = default;
+    friend bool operator==(const InputActionId &, const InputActionId &) = default;
 
-private:
+  private:
     std::string _value;
 };
 
 struct InputActionIdHash
 {
-    [[nodiscard]] std::size_t operator()(const InputActionId& id) const noexcept
+    [[nodiscard]] std::size_t operator()(const InputActionId &id) const noexcept
     {
         return std::hash<std::string>{}(id.value());
     }
@@ -40,18 +46,39 @@ enum class InputActionValueType
     Axis2D
 };
 
+enum class InputValueSemantics
+{
+    State,
+    Delta
+};
+enum class PointerDeltaAxis
+{
+    MouseX,
+    MouseY,
+    WheelX,
+    WheelY
+};
+
 struct InputActionDescriptor
 {
     InputActionId id;
     InputActionValueType value_type = InputActionValueType::Button;
     float actuation_threshold = 0.5f;
     float dead_zone = 0.2f;
+    InputValueSemantics semantics = InputValueSemantics::State;
 };
 
 enum class InputActionComponent
 {
     X,
     Y
+};
+
+struct PointerDeltaBinding
+{
+    PointerDeltaAxis axis;
+    InputActionComponent component = InputActionComponent::X;
+    float scale = 1;
 };
 
 struct ButtonInputBinding
@@ -84,11 +111,8 @@ struct Button2DInputBinding
     RawInputControl down = RawInputControl::None;
 };
 
-using InputBindingSource = std::variant<
-    ButtonInputBinding,
-    AxisInputBinding,
-    Axis2DInputBinding,
-    Button2DInputBinding>;
+using InputBindingSource = std::variant<ButtonInputBinding, AxisInputBinding, Axis2DInputBinding,
+                                        Button2DInputBinding, PointerDeltaBinding>;
 
 struct InputBinding
 {
@@ -101,7 +125,10 @@ struct InputActionValue
     float x = 0.0f;
     float y = 0.0f;
 
-    [[nodiscard]] elysia::core::Vector2 vector2() const noexcept { return { x, y }; }
+    [[nodiscard]] elysia::core::Vector2 vector2() const noexcept
+    {
+        return {x, y};
+    }
 };
 
 enum class ActionInputPhase
@@ -119,4 +146,4 @@ struct ActionInputEvent
     InputActionValue value;
     InputActionValue previous_value;
 };
-}
+} // namespace elysia::input

@@ -26,7 +26,13 @@ inline bool parse_positive_int(
         return false;
     }
 
-    const auto value = node.at(key_string).get<std::int64_t>();
+    const auto& number = node.at(key_string);
+    if (number.is_number_unsigned() && number.get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+    {
+        error = key_string + " is out of range.";
+        return false;
+    }
+    const auto value = number.get<std::int64_t>();
     if (value <= 0 || value > std::numeric_limits<int>::max())
     {
         error = key_string + " is out of range.";
@@ -94,7 +100,13 @@ inline bool parse_volume(
         return false;
     }
 
-    const auto value = node.at(key_string).get<std::int64_t>();
+    const auto& number = node.at(key_string);
+    if (number.is_number_unsigned() && number.get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+    {
+        error = key_string + " is out of range.";
+        return false;
+    }
+    const auto value = number.get<std::int64_t>();
     if (value < 0 || value > 100)
     {
         error = key_string + " must be within 0..100.";

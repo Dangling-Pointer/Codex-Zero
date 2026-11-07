@@ -6,17 +6,21 @@
 #include <SDL3_mixer/SDL_mixer.h>
 
 #include <algorithm>
+#include <limits>
 namespace elysia::audio
 {
 bool AudioService::initialize(const AudioSettings& settings)
 {
-    if (_initialized) shutdown();
+    if (_initialized)
+        shutdown();
+
     _music_controller.reset();
     _settings.master_volume = clamp_volume(settings.master_volume);
     _settings.music_volume = clamp_volume(settings.music_volume);
     _settings.sound_volume = clamp_volume(settings.sound_volume);
 
-    if (!detail::mixer_backend().initialize()) return false;
+    if (!detail::mixer_backend().initialize())
+        return false;
 
     _sound_scheduler.reset();
     _sound_group_volumes.fill(100);
@@ -96,6 +100,25 @@ void AudioService::update(double delta_seconds)
             apply_sound_channel_volume(channel,group,gain);
         });
     _music_controller.update(delta_seconds,music_backend());
+}
+
+bool AudioService::set_sound_gain(SoundHandle handle,double gain)
+{
+    return _initialized && _sound_scheduler.set_gain(handle,gain,
+        [this](int channel) { return channel_playing(channel); },
+        [this](int channel,SoundGroup group,double value) { apply_sound_channel_volume(channel,group,value); });
+}
+
+bool AudioService::set_sound_paused(SoundHandle handle,bool paused)
+{
+    return _initialized && _sound_scheduler.set_paused(handle,paused,
+        [this](int channel) { return channel_playing(channel); },
+        [this](int channel,bool value) { return value ? MIX_PauseTrack(_tracks[channel]) : MIX_ResumeTrack(_tracks[channel]); });
+}
+
+bool AudioService::sound_active(SoundHandle handle)
+{
+    return _initialized && _sound_scheduler.is_active(handle,[this](int channel) { return channel_playing(channel); });
 }
 
 bool AudioService::stop_sound(SoundHandle handle,std::chrono::milliseconds fade_out)
@@ -290,7 +313,8 @@ void AudioService::apply_sound_channel_volume(int channel,SoundGroup group,doubl
 {
     const double effective_sound = (_settings.master_volume* _settings.sound_volume
         * _sound_group_volumes[sound_group_index(group)]) / 1000000.0;
-    MIX_SetTrackGain(_tracks[channel],static_cast<float>(effective_sound * gain));
+    const double value = std::min(effective_sound * gain,double(std::numeric_limits<float>::max()));
+    MIX_SetTrackGain(_tracks[channel],static_cast<float>(value));
 }
 
 int AudioService::clamp_volume(int volume)
@@ -304,7 +328,8 @@ namespace elysia::audio
 {
 bool AudioService::channel_playing(int channel) const
 {
-    return channel >= 0 && channel < static_cast<int>(_tracks.size()) && _tracks[channel] && MIX_TrackPlaying(_tracks[channel]);
+    return channel >= 0 && channel < static_cast<int>(_tracks.size()) && _tracks[channel] &&
+        (MIX_TrackPlaying(_tracks[channel]) || MIX_TrackPaused(_tracks[channel]));
 }
 void AudioService::halt_channel(int channel)
 {

@@ -1,118 +1,161 @@
 #include "gameplay_scene.h"
-
-#include "../../scene/detail/scene_input_order.h"
+#include "../control/controller_manager.h"
 #include "../collision/gameplay_collision_service.h"
+#include "../../physics/contracts/physics_participant.h"
+#include "../../scene/detail/scene_failure_log.h"
 
-#include <algorithm>
-
+#include <exception>
 namespace elysia::gameplay
 {
-GameplayScene::GameplayScene()
-    : _collision_runtime(physics_world()),
-      _gameplay_input_map(make_default_gameplay_input_map())
+namespace
 {
+elysia::scene::SceneRuntimeFeatures scene_features(const GameplaySceneFeatures& features)
+{
+    return elysia::scene::SceneRuntimeFeatures{
+        .fixed_step = features.fixed_step,
+        .physics = features.physics,
+        .camera = features.camera};
+}
+} // namespace
+
+GameplayScene::GameplayScene() : GameplayScene(GameplaySceneFeatures{}) {}
+
+GameplayScene::GameplayScene(GameplaySceneFeatures features)
+    : Scene(scene_features(features))
+{
+    if (features.gameplay_collision && !features.physics)
+        throw std::invalid_argument("Gameplay collision requires a physics runtime.");
+    if (features.gameplay_collision)
+        _collision_runtime = std::make_unique<collision::GameplayCollisionRuntime>(physics_world());
+
+    input_router().set_auto_claim_ui_gamepad(false);
+    set_ui_interaction_mode(elysia::scene::UiInteractionMode::Pointer);
+    input_router().set_cancel_handler([this](auto player, auto reason) {
+        ControllerManager::instance()->cancel_local(_control_context, player, reason);
+    });
+}
+GameplayScene::~GameplayScene() = default;
+
+collision::GameplayCollisionRuntime* GameplayScene::try_collision_runtime() noexcept
+{
+    return _collision_runtime.get();
 }
 
-GameplayScene::GameplayScene(elysia::physics::PhysicsWorldConfig physics_config)
-    : elysia::scene::Scene(physics_config),
-      _collision_runtime(physics_world()),
-      _gameplay_input_map(make_default_gameplay_input_map())
+collision::GameplayCollisionRuntime& GameplayScene::collision_runtime()
 {
+    if (!_collision_runtime)
+        throw std::logic_error("GameplayScene does not have a collision runtime.");
+    return *_collision_runtime;
 }
 
-bool GameplayScene::activate_collision_runtime() noexcept
+bool GameplayScene::contains_control_target(const elysia::core::GameObject *target) const
 {
-    return collision::GameplayCollisionService::instance()->attach_runtime(
-        _collision_runtime);
+    return contains_object_address(target);
 }
-
-void GameplayScene::deactivate_collision_runtime() noexcept
+void GameplayScene::on_routed_input(const elysia::input::InputSnapshot &input)
 {
-    (void)collision::GameplayCollisionService::instance()->detach_runtime(
-        _collision_runtime);
+    ControllerManager::instance()->input(_control_context, input);
 }
-
-void GameplayScene::set_gameplay_input_enabled(bool enabled) noexcept
+void GameplayScene::on_fixed_update(std::uint64_t tick, double delta)
 {
-    if (_gameplay_input_enabled == enabled)
-        return;
-    _gameplay_input_enabled = enabled;
-    _gameplay_input_map.reset_state();
+    ControllerManager::instance()->advance(_control_context, tick, delta);
+    on_game_fixed_update(tick, delta);
 }
-
-void GameplayScene::on_input(
-    const elysia::input::RawInputFrame& input,
-    const std::vector<elysia::input::RawInputEvent>& events)
+void GameplayScene::on_pause_changed(bool paused)
 {
-    elysia::scene::Scene::on_input(input, events);
-    prune_receivers();
-    if (!_gameplay_input_enabled)
-        return;
-
-    elysia::input::ActionInputResult result = _gameplay_input_map.resolve(input);
-    dispatch_frame(GameplayInputFrame(std::move(result.frame)));
-    dispatch_events(result.events);
+    if (paused)
+        ControllerManager::instance()->pause(_control_context);
 }
-
-void GameplayScene::on_scene_object_registered(elysia::core::SceneObject& object)
+void GameplayScene::on_scene_object_removing(elysia::core::SceneObject &object)
 {
-    elysia::scene::Scene::on_scene_object_registered(object);
-    if (auto* receiver = dynamic_cast<GameplayInputFrameReceiver*>(&object))
+    std::exception_ptr failure;
+    try
     {
-        elysia::scene::scene_input_order::insert_receiver_entry_sorted(
-            _frame_receivers, FrameReceiverEntry{ &object, receiver });
+        if (auto *target = dynamic_cast<elysia::core::GameObject *>(&object))
+            ControllerManager::instance()->object_removed(_control_context, *target);
     }
-    if (auto* receiver = dynamic_cast<GameplayInputEventReceiver*>(&object))
+    catch (...)
     {
-        elysia::scene::scene_input_order::insert_receiver_entry_sorted(
-            _event_receivers, EventReceiverEntry{ &object, receiver });
+        failure = std::current_exception();
     }
-}
-
-void GameplayScene::prune_receivers()
-{
-    const auto destroyed = [](const auto& entry)
+    try
     {
-        return !entry.object || entry.object->is_destroyed();
-    };
-    std::erase_if(_frame_receivers, destroyed);
-    std::erase_if(_event_receivers, destroyed);
-}
-
-void GameplayScene::dispatch_frame(const GameplayInputFrame& input)
-{
-    for (const FrameReceiverEntry& entry : _frame_receivers)
-    {
-        if (!entry.object || entry.object->is_destroyed() || !entry.object->is_active())
-            continue;
-        if (_paused && !entry.object->receive_input_when_paused())
-            continue;
-        entry.receiver->on_gameplay_input_frame(input);
-    }
-}
-
-void GameplayScene::dispatch_events(const std::vector<elysia::input::ActionInputEvent>& events)
-{
-    for (const elysia::input::ActionInputEvent& event : events)
-    {
-        for (const EventReceiverEntry& entry : _event_receivers)
+        if (_collision_runtime)
         {
-            if (!entry.object || entry.object->is_destroyed() || !entry.object->is_active())
-                continue;
-            if (_paused && !entry.object->receive_input_when_paused())
-                continue;
-            if (entry.receiver->on_gameplay_input_event(event))
-                break;
+            for (const auto collider : registered_physics_colliders(object))
+                (void)_collision_runtime->unbind_collider(collider);
         }
     }
+    catch (...)
+    {
+        if (!failure)
+            failure = std::current_exception();
+        else
+            elysia::scene::detail::log_cleanup_exception("Gameplay collision unbind");
+    }
+    try
+    {
+        on_control_target_removing(object);
+    }
+    catch (...)
+    {
+        if (!failure)
+            failure = std::current_exception();
+        else
+            elysia::scene::detail::log_cleanup_exception("Control target removal");
+    }
+    if (failure)
+        std::rethrow_exception(failure);
 }
 
-//will be move down to engine next engine update
-void GameplayScene::on_scene_object_removing(elysia::core::SceneObject& object)
+void GameplayScene::on_runtime_attach()
 {
-    std::erase_if(_frame_receivers, [&](const auto& entry) { return entry.object == &object; });
-    std::erase_if(_event_receivers, [&](const auto& entry) { return entry.object == &object; });
-    Scene::on_scene_object_removing(object);
+    if (_collision_runtime &&
+        !collision::GameplayCollisionService::instance()->attach_runtime(*_collision_runtime))
+    {
+        throw std::logic_error("Gameplay collision runtime activation failed.");
+    }
+    try
+    {
+        _control_context.activate();
+    }
+    catch (...)
+    {
+        if (_collision_runtime)
+            (void)collision::GameplayCollisionService::instance()->detach_runtime(*_collision_runtime);
+        throw;
+    }
 }
 
+void GameplayScene::on_runtime_detach()
+{
+    std::exception_ptr failure;
+    try
+    {
+        _control_context.deactivate();
+    }
+    catch (...)
+    {
+        failure = std::current_exception();
+    }
+    try
+    {
+        if (_collision_runtime)
+            (void)collision::GameplayCollisionService::instance()->detach_runtime(*_collision_runtime);
+    }
+    catch (...)
+    {
+        if (!failure)
+            failure = std::current_exception();
+        else
+            elysia::scene::detail::log_cleanup_exception("Gameplay collision runtime detach");
+    }
+    if (failure)
+        std::rethrow_exception(failure);
 }
+
+void GameplayScene::on_runtime_reset()
+{
+    _control_context.reset();
+}
+} // namespace elysia::gameplay

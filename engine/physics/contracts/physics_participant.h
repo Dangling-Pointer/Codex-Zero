@@ -19,6 +19,11 @@ class PhysicsParticipant
         _world = &world;
         _handle = handle;
     }
+    void unbind_physics() noexcept
+    {
+        _world = nullptr;
+        _handle = {};
+    }
     PhysicsObjectHandle physics_handle() const noexcept
     {
         return _handle;
@@ -34,6 +39,14 @@ class PhysicsParticipant
     std::optional<BodyState> physics_state() const noexcept
     {
         return _world ? _world->body_state(_handle) : std::nullopt;
+    }
+    std::optional<MassProperties> mass_properties() const noexcept
+    {
+        return _world ? _world->mass_properties(_handle) : std::nullopt;
+    }
+    bool set_mass_properties(const MassProperties &properties)
+    {
+        return _world && _world->set_mass_properties(_handle, properties);
     }
     elysia::core::Vector2 velocity() const noexcept
     {
@@ -54,6 +67,10 @@ class PhysicsParticipant
     {
         if (_world)
             _world->set_velocity_y(_handle, y);
+    }
+    bool set_target_transform(PhysicsPose target,double fixed_delta_seconds)
+    {
+        return _world && _world->set_target_transform(_handle,target,fixed_delta_seconds);
     }
     void update_physics_collider(std::size_t i, const Collider &c)
     {

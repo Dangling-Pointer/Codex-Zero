@@ -31,7 +31,7 @@ public:
     [[nodiscard]] bool visible() const noexcept;
     [[nodiscard]] IDevelopmentPanelRegistry* panel_registry() noexcept;
     [[nodiscard]] const IDevelopmentPanelRegistry* panel_registry() const noexcept;
-    [[nodiscard]] elysia::input::DevelopmentInputCapture
+    [[nodiscard]] elysia::input::InputCapture
         captured_input() const noexcept;
 
 private:

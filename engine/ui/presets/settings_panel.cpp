@@ -3,6 +3,7 @@
 #include "../composites/ui_dropdown.h"
 #include "../composites/ui_labeled_checkbox.h"
 #include "../containers/ui_scroll_container.h"
+#include "../containers/ui_panel.h"
 #include "../layout/ui_layout_types.h"
 #include "../text/ui_text_content.h"
 #include "../text/ui_typography.h"
@@ -12,7 +13,7 @@
 #include "../window/ui_window.h"
 
 #include "../../tools/logger.h"
-#include "../../localization/locale.h"
+#include "../../builtin/resources/builtin_resources.h"
 
 #include <algorithm>
 #include <array>
@@ -31,12 +32,12 @@ namespace
 {
 constexpr float kRowHeight = 48.0f;
 constexpr float kTitleHeight = 56.0f;
-constexpr float kSectionHeadingHeight = 40.0f;
+constexpr float kSectionHeadingHeight = 32.0f;
 constexpr float kStatusHeight = 32.0f;
 constexpr float kActionHeight = 48.0f;
 constexpr float kHintHeight = 32.0f;
 constexpr float kItemSpacing = 6.0f;
-constexpr float kHorizontalPadding = 40.0f;
+constexpr float kHorizontalPadding = 28.0f;
 constexpr float kVerticalPadding = 24.0f;
 constexpr float kFieldSpacing = 20.0f;
 constexpr float kButtonWidth = 160.0f;
@@ -64,17 +65,15 @@ std::unique_ptr<UiListContainer> make_field_row(UiTextContent label_content,floa
 
 std::unique_ptr<UiListContainer> make_hint_row(
     UiTextContent content,
-    float field_width,
-    float label_width)
+    float field_width)
 {
     auto row = std::make_unique<UiListContainer>(
         elysia::core::Rect{ 0,0,field_width,kHintHeight });
     row->set_direction(UiListDirection::Horizontal);
     row->set_item_spacing(kFieldSpacing);
-    row->add_back(make_label({},label_width,kHintHeight));
     auto hint = make_label(
         std::move(content),
-        std::max(0.0f,field_width - label_width - kFieldSpacing),
+        field_width,
         kHintHeight,
         UiTypographyRole::LabelMuted);
     hint->set_visual_role(UiLabelVisualRole::Muted);
@@ -147,19 +146,26 @@ std::string target_fps_label(double value)
     return stream.str();
 }
 
-UiTextContent language_content(const std::string& language)
+UiDropdownOption language_option(const std::string& language)
 {
-    const std::string_view key_segment =
-        elysia::localization::locale_key_segment(language);
-    if (!key_segment.empty())
+    const auto locale = elysia::builtin::builtin_locale_id(language);
+    UiDropdownOption option{ ui_raw_text(language) };
+    if (locale != elysia::builtin::BuiltinLocaleId::Count)
     {
-        return ui_text_key("engine.settings.languages." + std::string(key_segment));
+        const auto* name = elysia::builtin::BuiltinResources::instance()->find_translation(
+            locale,"engine.settings.native_name");
+        if (name && !name->empty())
+            option.content = ui_raw_text(*name);
+        else
+            ELYSIA_LOG_WARN("UiSettingPanel","Missing native language name: " + language);
+        option.font_language_override = language;
+        option.font_source_override = elysia::typography::FontSource::EngineBuiltIn;
     }
     else
     {
-        ELYSIA_LOG_ERROR("UiSettingPanel","cant find language i18n:"+language);
-        return ui_raw_text(language);
+        ELYSIA_LOG_WARN("UiSettingPanel","Unknown language: " + language);
     }
+    return option;
 }
 }
 
@@ -229,7 +235,8 @@ void SettingsPanel::reset() noexcept
     _on_save = {};
     _on_back = {};
     _content_scroll = nullptr;
-    _window_option_dropdown = nullptr;
+    _window_mode_dropdown = nullptr;
+    _window_size_dropdown = nullptr;
     _target_fps_dropdown = nullptr;
     _vsync_checkbox = nullptr;
     _master_volume_slider = nullptr;
@@ -396,8 +403,10 @@ void SettingsPanel::register_with_window(UiWindow& window)
 
     _window = &window;
 
-    if (_window_option_dropdown)
-        _window_option_dropdown->register_with_window(window);
+    if (_window_mode_dropdown)
+        _window_mode_dropdown->register_with_window(window);
+    if (_window_size_dropdown)
+        _window_size_dropdown->register_with_window(window);
 
     if (_target_fps_dropdown)
         _target_fps_dropdown->register_with_window(window);
@@ -408,8 +417,10 @@ void SettingsPanel::register_with_window(UiWindow& window)
 
 void SettingsPanel::unregister_from_window() noexcept
 {
-    if (_window_option_dropdown)
-        _window_option_dropdown->unregister_from_window();
+    if (_window_mode_dropdown)
+        _window_mode_dropdown->unregister_from_window();
+    if (_window_size_dropdown)
+        _window_size_dropdown->unregister_from_window();
 
     if (_target_fps_dropdown)
         _target_fps_dropdown->unregister_from_window();
@@ -432,18 +443,22 @@ void SettingsPanel::build_controls()
 
     const float field_width = std::max(
         240.0f,size().x - 2.0f * kHorizontalPadding);
-    constexpr float page_padding = 12.0f;
-    const float page_field_width = std::max(
-        216.0f,field_width - page_padding * 2.0f);
+
+    constexpr float scrollbar_space = 12.0f + 20.0f;
+    const float content_width = field_width - scrollbar_space;
+
+    constexpr float page_padding = 16.0f;
+    const float page_field_width =
+        content_width - page_padding * 2.0f;
+
     const float label_width = std::clamp(
-        page_field_width * 0.32f,120.0f,190.0f);
-    const float control_width = std::max(
-        100.0f,page_field_width - label_width - kFieldSpacing);
+        page_field_width * 0.32f,80.0f,190.0f);
+    const float control_width = page_field_width - label_width - kFieldSpacing;
 
     auto title = make_label(
         ui_text_key("engine.settings.title"),
         field_width,kTitleHeight,UiTypographyRole::Title);
-    title->set_horizontal_align(TextHorizontalAlign::Center);
+    title->set_horizontal_align(TextHorizontalAlign::Left);
     title->set_visual_role(UiLabelVisualRole::Title);
     add_back(std::move(title));
 
@@ -452,12 +467,19 @@ void SettingsPanel::build_controls()
     _content_scroll->set_scroll_axis(UiScrollAxis::Vertical);
     _content_scroll->set_scrollbar_visibility(UiScrollBarVisibility::Auto);
     _content_scroll->set_scroll_step({ 0.0f,kRowHeight });
+    _content_scroll->set_style_overrides(
+        UiScrollContainerStyleOverrides{
+            .scrollbar = {
+                .thickness = 12.0f,
+                .margin = 20.0f
+            },
+            .draw_border = false
+        });
 
     auto content = std::make_unique<UiListContainer>(
-        elysia::core::Rect{ 0,0,field_width,0 });
+        elysia::core::Rect{ 0,0,content_width,0 });
     content->set_direction(UiListDirection::Vertical);
-    content->set_item_spacing(kItemSpacing);
-    content->set_padding({ page_padding,page_padding,page_padding,page_padding });
+    content->set_item_spacing(20.0f);
 
     const bool has_display = _visibility.window_mode
         || _visibility.target_fps || _visibility.vsync;
@@ -466,16 +488,41 @@ void SettingsPanel::build_controls()
     const bool has_general = _visibility.language;
     const int visible_section_count = static_cast<int>(has_display)
         + static_cast<int>(has_audio) + static_cast<int>(has_general);
+    std::unique_ptr<UiListContainer> section;
+    std::unique_ptr<UiListContainer> fields;
+    const auto finish_section = [&]()
+    {
+        if (!section)
+            return;
+        // Reuse the existing panel palette; only its geometry is customized.
+        const auto extent = fields->content_extent();
+        fields->set_size(extent);
+        auto surface = std::make_unique<UiPanel>(
+            elysia::core::Rect{ 0,0,extent.x,extent.y });
+        surface->set_style_overrides(UiPanelStyleOverrides{
+            .corner_radius = 10.0f,
+            .draw_border = false
+        });
+        surface->add_child(std::move(fields));
+        section->add_back(std::move(surface));
+        content->add_back(std::move(section));
+    };
     const auto add_section_heading = [&](std::string_view key)
     {
-        if (visible_section_count <= 1)
-            return;
-        auto heading = make_label(
-            ui_text_key(std::string(key)),
-            page_field_width,
-            kSectionHeadingHeight,
-            UiTypographyRole::Heading);
-        content->add_back(std::move(heading));
+        finish_section();
+        section = std::make_unique<UiListContainer>(
+            elysia::core::Rect{ 0,0,content_width,0 });
+        section->set_item_spacing(8.0f);
+        if (visible_section_count > 1)
+        {
+            section->add_back(make_label(
+                ui_text_key(std::string(key)),content_width,
+                kSectionHeadingHeight,UiTypographyRole::Heading));
+        }
+        fields = std::make_unique<UiListContainer>(
+            elysia::core::Rect{ 0,0,content_width,0 });
+        fields->set_item_spacing(kItemSpacing);
+        fields->set_padding({ page_padding,12.0f,page_padding,12.0f });
     };
 
     if (has_display)
@@ -484,31 +531,40 @@ void SettingsPanel::build_controls()
 
         if (_visibility.window_mode)
         {
-            auto window_option = std::make_unique<UiDropdown>(
+            auto window_mode = std::make_unique<UiDropdown>(
                 elysia::core::Rect{ 0,0,control_width,kRowHeight });
-            _window_option_dropdown = window_option.get();
-            _window_option_dropdown->set_on_selection_changed(
+            _window_mode_dropdown = window_mode.get();
+            _window_mode_dropdown->set_options({
+                { ui_text_key("engine.settings.window_modes.windowed") },
+                { ui_text_key("engine.settings.window_modes.borderless_fullscreen") }
+            });
+            _window_mode_dropdown->set_on_selection_changed(
                 [this](std::size_t index)
             {
                 if (_syncing_controls)
                     return;
-
-                if (index < _options.window_sizes.size())
-                {
-                    _draft.window_mode = SettingsWindowMode::Windowed;
-                    _draft.window_size = _options.window_sizes[index];
-                    return;
-                }
-
-                if (index == _options.window_sizes.size())
-                    _draft.window_mode =
-                        SettingsWindowMode::BorderlessFullscreen;
+                _draft.window_mode = index == 0
+                    ? SettingsWindowMode::Windowed
+                    : SettingsWindowMode::BorderlessFullscreen;
+                sync_controls_from_draft();
             });
-            content->add_back(make_field_row(
+            fields->add_back(make_field_row(
                 ui_text_key("engine.settings.fields.window_mode"),
                 page_field_width,
                 label_width,
-                std::move(window_option)));
+                std::move(window_mode)));
+
+            auto window_size = std::make_unique<UiDropdown>(
+                elysia::core::Rect{ 0,0,control_width,kRowHeight });
+            _window_size_dropdown = window_size.get();
+            _window_size_dropdown->set_on_selection_changed([this](std::size_t index)
+            {
+                if (!_syncing_controls && index < _options.window_sizes.size())
+                    _draft.window_size = _options.window_sizes[index];
+            });
+            fields->add_back(make_field_row(
+                ui_text_key("engine.settings.fields.window_size"),
+                page_field_width,label_width,std::move(window_size)));
         }
 
         if (_visibility.target_fps)
@@ -525,7 +581,7 @@ void SettingsPanel::build_controls()
                     _draft.target_fps = _options.target_fps_values[index];
                 }
             });
-            content->add_back(make_field_row(
+            fields->add_back(make_field_row(
                 ui_text_key("engine.settings.fields.target_fps"),
                 page_field_width,
                 label_width,
@@ -535,22 +591,21 @@ void SettingsPanel::build_controls()
         if (_visibility.vsync)
         {
             auto vsync = std::make_unique<UiLabeledCheckbox>(
-                elysia::core::Rect{ 0,0,control_width,kRowHeight });
+                elysia::core::Rect{ 0,0,kRowHeight,kRowHeight });
             _vsync_checkbox = vsync.get();
             _vsync_checkbox->set_on_toggled([this](UiCheckboxState state)
             {
                 if (!_syncing_controls)
                     _draft.vsync = state == UiCheckboxState::Checked;
             });
-            content->add_back(make_field_row(
+            fields->add_back(make_field_row(
                 ui_text_key("engine.settings.fields.vsync"),
                 page_field_width,
-                label_width,
+                page_field_width - kRowHeight - kFieldSpacing,
                 std::move(vsync)));
-            content->add_back(make_hint_row(
+            fields->add_back(make_hint_row(
                 ui_text_key("engine.settings.hints.vsync_restart"),
-                page_field_width,
-                label_width));
+                page_field_width));
         }
     }
 
@@ -570,7 +625,7 @@ void SettingsPanel::build_controls()
                         static_cast<int>(std::lround(value));
                 }
             });
-            content->add_back(make_field_row(
+            fields->add_back(make_field_row(
                 ui_text_key("engine.settings.fields.master_volume"),
                 page_field_width,
                 label_width,
@@ -589,7 +644,7 @@ void SettingsPanel::build_controls()
                         static_cast<int>(std::lround(value));
                 }
             });
-            content->add_back(make_field_row(
+            fields->add_back(make_field_row(
                 ui_text_key("engine.settings.fields.music_volume"),
                 page_field_width,
                 label_width,
@@ -608,7 +663,7 @@ void SettingsPanel::build_controls()
                         static_cast<int>(std::lround(value));
                 }
             });
-            content->add_back(make_field_row(
+            fields->add_back(make_field_row(
                 ui_text_key("engine.settings.fields.sound_volume"),
                 page_field_width,
                 label_width,
@@ -629,13 +684,14 @@ void SettingsPanel::build_controls()
             if (!_syncing_controls && index < _options.languages.size())
                 _draft.language = _options.languages[index];
         });
-        content->add_back(make_field_row(
+        fields->add_back(make_field_row(
             ui_text_key("engine.settings.fields.language"),
             page_field_width,
             label_width,
             std::move(language)));
     }
 
+    finish_section();
     _content_scroll->set_content(std::move(content));
 
     const float content_height = std::max(
@@ -653,14 +709,15 @@ void SettingsPanel::build_controls()
     _status_label->set_visible(false);
     add_back(std::move(status));
 
+    const float button_width = std::min(kButtonWidth,(field_width - 16.0f) * 0.5f);
     auto actions = std::make_unique<UiListContainer>(
-        elysia::core::Rect{ 0,0,field_width,kActionHeight });
+        elysia::core::Rect{ 0,0,button_width * 2.0f + 16.0f,kActionHeight });
     actions->set_direction(UiListDirection::Horizontal);
     actions->set_cross_align(UiLayoutAlign::Center);
     actions->set_item_spacing(16.0f);
 
     auto save = std::make_unique<UiButton>(
-        elysia::core::Rect{ 0,0,kButtonWidth,kActionHeight });
+        elysia::core::Rect{ 0,0,button_width,kActionHeight });
     save->set_text_content(ui_text_key("engine.settings.actions.save"));
     save->set_visual_role(UiButtonVisualRole::Primary);
     save->set_on_click([this]()
@@ -670,10 +727,9 @@ void SettingsPanel::build_controls()
         if (callback)
             callback(_draft);
     });
-    actions->add_back(std::move(save));
 
     auto back = std::make_unique<UiButton>(
-        elysia::core::Rect{ 0,0,kButtonWidth,kActionHeight });
+        elysia::core::Rect{ 0,0,button_width,kActionHeight });
     back->set_text_content(ui_text_key("engine.settings.actions.back"));
     back->set_on_click([this]()
     {
@@ -682,18 +738,22 @@ void SettingsPanel::build_controls()
             callback();
     });
     actions->add_back(std::move(back));
-    add_back(std::move(actions));
+    actions->add_back(std::move(save));
+    add_child(std::move(actions),UiLayoutChildOptions{
+        ._cross_align = UiLayoutAlign::End,
+        ._use_custom_cross_align = true
+    });
 
     reset_navigation_state();
 }
 
 void SettingsPanel::rebuild_window_options()
 {
-    if (!_window_option_dropdown)
+    if (!_window_size_dropdown)
         return;
 
     std::vector<UiDropdownOption> options;
-    options.reserve(_options.window_sizes.size() + 1u);
+    options.reserve(_options.window_sizes.size());
     for (const SettingsWindowSize& window_size : _options.window_sizes)
     {
         options.push_back(UiDropdownOption{
@@ -703,10 +763,7 @@ void SettingsPanel::rebuild_window_options()
                 + std::to_string(window_size.height))
         });
     }
-    options.push_back(UiDropdownOption{
-        ui_text_key("engine.settings.window_modes.borderless_fullscreen")
-    });
-    _window_option_dropdown->set_options(std::move(options));
+    _window_size_dropdown->set_options(std::move(options));
 }
 
 void SettingsPanel::rebuild_target_fps_options()
@@ -732,7 +789,7 @@ void SettingsPanel::rebuild_language_options()
     std::vector<UiDropdownOption> options;
     options.reserve(_options.languages.size());
     for (const std::string& language : _options.languages)
-        options.push_back(UiDropdownOption{ language_content(language) });
+        options.push_back(language_option(language));
     _language_dropdown->set_options(std::move(options));
 }
 
@@ -740,23 +797,19 @@ void SettingsPanel::sync_controls_from_draft()
 {
     _syncing_controls = true;
 
-    if (_window_option_dropdown)
+    if (_window_mode_dropdown)
     {
-        if (_draft.window_mode == SettingsWindowMode::BorderlessFullscreen)
-        {
-            (void)_window_option_dropdown->set_selected_index(
-                _options.window_sizes.size());
-        }
-        else
-        {
-            const std::size_t window_size_index =
-                find_window_size_index(_draft.window_size);
-            if (window_size_index != kNotFound)
-            {
-                (void)_window_option_dropdown->set_selected_index(
-                    window_size_index);
-            }
-        }
+        (void)_window_mode_dropdown->set_selected_index(
+            _draft.window_mode == SettingsWindowMode::Windowed ? 0u : 1u);
+    }
+    if (_window_size_dropdown)
+    {
+        const auto index = find_window_size_index(_draft.window_size);
+        if (index != kNotFound)
+            (void)_window_size_dropdown->set_selected_index(index);
+        _window_size_dropdown->set_enabled(
+            _draft.window_mode == SettingsWindowMode::Windowed
+            && !_options.window_sizes.empty());
     }
 
     if (_master_volume_slider)

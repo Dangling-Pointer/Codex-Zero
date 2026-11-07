@@ -7,6 +7,7 @@
 #include "../../tools/logger.h"
 #include "../../typography/font_resolver.h"
 #include "../../ui/widgets/image/ui_fade_image.h"
+#include "../../ui/widgets/image/ui_image.h"
 #include "../../ui/widgets/label/ui_blink_label.h"
 #include "../../ui/widgets/ui_bar.h"
 #include "../../scene/runtime/scene_runtime_context.h"
@@ -29,10 +30,41 @@ constexpr double kEngineLogoFadeInSeconds = 1.0;
 constexpr double kEngineLogoHoldSeconds = 1.0;
 constexpr double kEngineLogoFadeOutSeconds = 1.0;
 
+BuiltinTextureId engine_logo_texture_id(
+    elysia::application::ApplicationEngineLogoVariant variant)
+{
+    using elysia::application::ApplicationEngineLogoVariant;
+    switch (variant)
+    {
+    case ApplicationEngineLogoVariant::Default:
+        return BuiltinTextureId::ElysiaDefault;
+    case ApplicationEngineLogoVariant::Black:
+        return BuiltinTextureId::ElysiaBlack;
+    case ApplicationEngineLogoVariant::BlackAlphaInverse:
+        return BuiltinTextureId::ElysiaBlackAlphaInverse;
+    case ApplicationEngineLogoVariant::LightEdge:
+        return BuiltinTextureId::ElysiaLightEdge;
+    case ApplicationEngineLogoVariant::White:
+        return BuiltinTextureId::ElysiaWhite;
+    }
+    throw std::invalid_argument("Unsupported startup engine logo variant.");
+}
+
 bool is_valid_route(const SceneRoute& route) noexcept
 {
     return elysia::scene::SceneKeys::is_supported(route.target);
 }
+}
+
+StartupLoadingScene::StartupLoadingScene(
+    elysia::application::ApplicationEngineLogoVariant engine_logo_variant)
+    : _engine_logo_texture_id(engine_logo_texture_id(engine_logo_variant))
+{
+    // Confirmation accepts mouse buttons as well as keyboard and gamepad input.
+    set_shortcut_devices(
+        elysia::input::InputCapture::Keyboard
+        | elysia::input::InputCapture::Pointer
+        | elysia::input::InputCapture::Gamepad);
 }
 
 elysia::ui::UiTextContent
@@ -66,7 +98,9 @@ void StartupLoadingScene::on_enter(const ScenePayload& payload)
     }
 
     _startup_payload = *startup_payload;
-    _completion.reset(_startup_payload.wait_for_confirmation);
+    _completion.reset(
+        _startup_payload.wait_for_confirmation,
+        _startup_payload.wait_for_logo_sequence);
     _paused = false;
 
     elysia::typography::FontResolver* font_resolver =
@@ -102,7 +136,7 @@ void StartupLoadingScene::on_exit()
     clear_state();
 }
 
-void StartupLoadingScene::reset()
+void StartupLoadingScene::on_reset()
 {
     _paused = false;
     _content_loader.reset();
@@ -110,12 +144,8 @@ void StartupLoadingScene::reset()
     clear_state();
 }
 
-void StartupLoadingScene::on_update(double delta)
+void StartupLoadingScene::on_after_update(double delta)
 {
-    if (_completion.transitioning())
-        return;
-
-    Scene::on_update(delta);
     if (_completion.transitioning())
         return;
 
@@ -135,11 +165,9 @@ void StartupLoadingScene::on_update(double delta)
         mark_loading_finished();
 }
 
-void StartupLoadingScene::on_input(
-    const elysia::input::RawInputFrame& input,
-    const std::vector<elysia::input::RawInputEvent>& events)
+void StartupLoadingScene::on_shortcuts(const elysia::input::RawInputFrame &input,
+                                       const std::vector<elysia::input::RawInputEvent> &events)
 {
-    Scene::on_input(input,events);
 
     if (!_completion.waiting_for_confirmation()
         || _completion.transitioning())
@@ -152,6 +180,7 @@ void StartupLoadingScene::on_input(
                 elysia::input::RawInputControl::AnyControl,
                 event.control))
         {
+            consume_input(event);
             handle_completion_action(_completion.confirm());
             return;
         }
@@ -160,7 +189,9 @@ void StartupLoadingScene::on_input(
 
 bool StartupLoadingScene::create_presentation()
 {
-    SDL_Texture* engine_texture = elysia::builtin::BuiltinResources::instance()->find_texture(BuiltinTextureId::ElysiaWhite);
+    SDL_Texture* engine_texture =
+        elysia::builtin::BuiltinResources::instance()->find_texture(
+            _engine_logo_texture_id);
     if (!engine_texture)
     {
         handle_failure("Required Elysia startup logo is not available.");
@@ -248,8 +279,45 @@ bool StartupLoadingScene::create_presentation()
         }
     }
 
+    create_background();
     create_loading_ui();
     return !_completion.transitioning();
+}
+
+void StartupLoadingScene::create_background()
+{
+    if (!_startup_payload.background)
+        return;
+
+    const auto& slot = *_startup_payload.background;
+    if (slot.texture_key.empty())
+    {
+        ELYSIA_LOG_WARN("startup",
+            "Startup background slot has an empty texture key and will be skipped.");
+        return;
+    }
+
+    SDL_Texture* texture =
+        elysia::bootstrap::Bootstrapper::instance()->find_preload_texture(
+            slot.texture_key);
+    if (!texture)
+    {
+        ELYSIA_LOG_WARN("startup",
+            "Optional startup background is unavailable and will be skipped: "
+            << slot.texture_key);
+        return;
+    }
+
+    _background = create_and_add_object<elysia::ui::UiImage>(
+        texture,
+        elysia::core::Rect{
+            0.0f,0.0f,
+            static_cast<float>(runtime_context().logical_width()),
+            static_cast<float>(runtime_context().logical_height())
+        },
+        -1);
+    if (_background)
+        _background->set_visible(false);
 }
 
 void StartupLoadingScene::create_loading_ui()
@@ -322,6 +390,8 @@ void StartupLoadingScene::on_project_logo_finished()
 
 void StartupLoadingScene::mark_intro_finished()
 {
+    if (_background && !_completion.transitioning())
+        _background->set_visible(true);
     handle_completion_action(_completion.mark_intro_finished());
 }
 
@@ -466,8 +536,10 @@ void StartupLoadingScene::handle_failure(
 void StartupLoadingScene::destroy_ui()
 {
     const bool had_ui =
-        _loading_bar || _engine_logo || _project_logo || _start_prompt;
+        _background || _loading_bar || _engine_logo || _project_logo || _start_prompt;
 
+    if (_background)
+        _background->destroy();
     if (_loading_bar)
         _loading_bar->destroy();
     if (_engine_logo)
@@ -477,22 +549,21 @@ void StartupLoadingScene::destroy_ui()
     if (_start_prompt)
         _start_prompt->destroy();
 
+    _background = nullptr;
     _loading_bar = nullptr;
     _engine_logo = nullptr;
     _project_logo = nullptr;
     _start_prompt = nullptr;
 
-    // Scene owns its objects and removes destroyed entries at the end of a
-    // base update. Purge now so a cached StartupLoadingScene cannot accumulate
-    // dead widgets across repeated exits/enters.
+    // Purge immediately so a cached scene cannot accumulate retired widgets.
     if (had_ui)
-        Scene::on_update(0.0);
+        clear_scene_objects();
 }
 
 void StartupLoadingScene::clear_state() noexcept
 {
     _startup_payload = StartupLoadingScenePayload{};
     _logo_sequence.reset(false);
-    _completion.reset(false);
+    _completion.reset(false,true);
 }
 }

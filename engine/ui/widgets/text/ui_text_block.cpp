@@ -56,6 +56,7 @@ void UiTextBlock::reset() noexcept
     _visual_role = UiTextBlockVisualRole::Default;
     _typography_role = UiTypographyRole::DialogBody;
     _font_source_override.reset();
+    _font_language_override.reset();
     _horizontal_align = resolve_ui_typography(_typography_role).horizontal_align_default;
     _padding = 0;
 }
@@ -73,6 +74,7 @@ elysia::core::Vector2 UiTextBlock::content_extent() const noexcept
     elysia::localization::LocalizedTextStyle text_style;
     text_style.typography_role = _typography_role;
     text_style.font_source_override = _font_source_override;
+    text_style.font_language_override = _font_language_override;
     text_style.color = _style_state.effective_style().text;
     text_style.wrap_width = typography.wrap_allowed ? std::max(0,static_cast<int>(width)) : 0;
 
@@ -110,6 +112,7 @@ void UiTextBlock::submit_ui_render_commands(std::vector<elysia::core::UiRenderCo
     elysia::localization::LocalizedTextStyle text_style;
     text_style.typography_role = _typography_role;
     text_style.font_source_override = _font_source_override;
+    text_style.font_language_override = _font_language_override;
     text_style.color = style.text;
     text_style.wrap_width = typography.wrap_allowed ? std::max(0,static_cast<int>(content_rect().width())) : 0;
 
@@ -227,6 +230,32 @@ std::optional<elysia::typography::FontSource>
 UiTextBlock::font_source_override() const noexcept
 {
     return _font_source_override;
+}
+
+void UiTextBlock::set_font_language_override(std::string language)
+{
+    if (language.empty())
+    {
+        clear_font_language_override();
+        return;
+    }
+    if (_font_language_override == language)
+        return;
+    _font_language_override = std::move(language);
+    notify_layout_parent_of_intrinsic_layout_invalidation();
+}
+
+void UiTextBlock::clear_font_language_override() noexcept
+{
+    if (!_font_language_override)
+        return;
+    _font_language_override.reset();
+    notify_layout_parent_of_intrinsic_layout_invalidation();
+}
+
+const std::optional<std::string>& UiTextBlock::font_language_override() const noexcept
+{
+    return _font_language_override;
 }
 
 void UiTextBlock::set_padding(int padding) noexcept

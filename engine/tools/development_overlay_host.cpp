@@ -120,11 +120,11 @@ DevelopmentOverlayHost::panel_registry() const noexcept
     return _initialized ? _overlay.get() : nullptr;
 }
 
-elysia::input::DevelopmentInputCapture
+elysia::input::InputCapture
 DevelopmentOverlayHost::captured_input() const noexcept
 {
     return _initialized && _visible && _overlay
         ? _overlay->captured_input()
-        : elysia::input::DevelopmentInputCapture::None;
+        : elysia::input::InputCapture::None;
 }
 }

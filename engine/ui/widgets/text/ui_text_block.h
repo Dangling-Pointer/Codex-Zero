@@ -52,6 +52,11 @@ public:
     void clear_font_source_override() noexcept;
     [[nodiscard]] std::optional<elysia::typography::FontSource>
         font_source_override() const noexcept;
+
+    // Changes only the font language; translation lookup still follows the UI locale.
+    void set_font_language_override(std::string language);
+    void clear_font_language_override() noexcept;
+    [[nodiscard]] const std::optional<std::string>& font_language_override() const noexcept;
     void set_padding(int padding) noexcept;
     [[nodiscard]] int padding() const noexcept;
     void set_horizontal_align(TextHorizontalAlign align) noexcept;
@@ -71,6 +76,7 @@ private:
     elysia::typography::UiTypographyRole _typography_role =
         elysia::typography::UiTypographyRole::DialogBody;
     std::optional<elysia::typography::FontSource> _font_source_override;
+    std::optional<std::string> _font_language_override;
     TextHorizontalAlign _horizontal_align = TextHorizontalAlign::Left;
     int _padding = 0;
 };

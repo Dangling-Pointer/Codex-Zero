@@ -1,13 +1,21 @@
 #include "contracts/physics_step_participant.h"
 #include "detail/physics_world_impl.h"
+#include "detail/mass_properties.h"
+#include "../tools/logger.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
+#include <string>
+#include <typeinfo>
 
 namespace elysia::physics
 {
+using detail::ColliderValidationFailure;
+using detail::collider_validation_failure;
+
 namespace
 {
 bool finite(elysia::core::Vector2 v)
@@ -18,6 +26,92 @@ bool nonnegative(float v)
 {
     return std::isfinite(v) && v >= 0;
 }
+bool valid_mass_motion(const b2MassData &data, b2Transform transform, b2Vec2 old_center,
+    b2Vec2 velocity, float angular_velocity, const detail::PhysicsUnits &units)
+{
+    const auto center = b2TransformPoint(transform, data.center);
+    const auto adjusted = b2Add(velocity, b2CrossSV(angular_velocity, b2Sub(center, old_center)));
+    return finite({center.x, center.y}) && finite(units.from_length({center.x, center.y})) &&
+        finite({adjusted.x, adjusted.y}) && finite(units.from_length({adjusted.x, adjusted.y}));
+}
+
+} // namespace
+
+std::optional<ColliderValidationFailure> detail::collider_validation_failure(
+    const Collider& collider, float units_per_meter)
+{
+    if (!nonnegative(collider.material.friction))
+        return ColliderValidationFailure::Friction;
+    if (!nonnegative(collider.material.restitution))
+        return ColliderValidationFailure::Restitution;
+    if (!nonnegative(collider.density.kilograms_per_square_meter))
+        return ColliderValidationFailure::Density;
+    if (collider.one_way && !nonnegative(collider.one_way->tolerance))
+        return ColliderValidationFailure::OneWayTolerance;
+
+    if (!detail::shape_geometry(collider.shape, detail::PhysicsUnits(units_per_meter)))
+        return ColliderValidationFailure::Geometry;
+    return std::nullopt;
+}
+
+namespace
+{
+void append_collider_validation_detail(
+    std::ostream& stream,
+    ColliderValidationFailure failure,
+    const Collider& collider)
+{
+    switch (failure)
+    {
+    case ColliderValidationFailure::Friction:
+        stream << "friction must be finite and non-negative; friction="
+               << collider.material.friction;
+        return;
+    case ColliderValidationFailure::Restitution:
+        stream << "restitution must be finite and non-negative; restitution="
+               << collider.material.restitution;
+        return;
+    case ColliderValidationFailure::Density:
+        stream << "density must be finite and non-negative; density="
+               << collider.density.kilograms_per_square_meter;
+        return;
+    case ColliderValidationFailure::OneWayTolerance:
+        stream << "one-way tolerance must be finite and non-negative; tolerance="
+               << collider.one_way->tolerance;
+        return;
+    case ColliderValidationFailure::Geometry:
+        stream << "invalid collider geometry; shape_index=" << collider.shape.index();
+        return;
+    }
+}
+
+void log_invalid_collider_registration(
+    const elysia::core::GameObject& owner,
+    std::size_t collider_index,
+    ColliderValidationFailure failure,
+    const Collider& collider)
+{
+    ELYSIA_LOG_WARN("physics", "Rejected collider registration: owner_type="
+        << typeid(owner).name() << ", collider_index=" << collider_index << ", "
+        << [&]() -> std::string {
+            std::ostringstream detail;
+            append_collider_validation_detail(detail, failure, collider);
+            return detail.str();
+        }());
+}
+
+void log_invalid_collider_update(
+    ColliderId id,
+    ColliderValidationFailure failure,
+    const Collider& collider)
+{
+    ELYSIA_LOG_WARN("physics", "Rejected collider update: collider_id=" << id << ", "
+        << [&]() -> std::string {
+            std::ostringstream detail;
+            append_collider_validation_detail(detail, failure, collider);
+            return detail.str();
+        }());
+}
 b2BodyType type(BodyType t)
 {
     return t == BodyType::Dynamic     ? b2_dynamicBody
@@ -27,8 +121,7 @@ b2BodyType type(BodyType t)
 } // namespace
 PhysicsWorld::Impl::Impl(PhysicsWorldConfig c) : config(c), units(c.units_per_meter)
 {
-    if (!std::isfinite(c.fixed_delta_seconds) || c.fixed_delta_seconds <= 0 ||
-        !c.max_steps_per_advance || !c.sub_steps || c.sub_steps > 64 || !finite(c.gravity) ||
+    if (!c.sub_steps || c.sub_steps > 64 || !finite(c.gravity) ||
         !nonnegative(c.restitution_velocity_threshold) ||
         !nonnegative(c.contact_normal_threshold) || c.contact_normal_threshold > 1)
         throw std::invalid_argument("Invalid physics configuration");
@@ -43,30 +136,13 @@ PhysicsWorld::Impl::~Impl()
 {
     b2DestroyWorld(world);
 }
-bool PhysicsWorld::Impl::valid(const Collider &c)
-{
-    if (!nonnegative(c.material.friction) || !nonnegative(c.material.restitution) ||
-        c.material.restitution > 1 || !nonnegative(c.density.kilograms_per_square_meter))
-        return false;
-    if (c.one_way && !nonnegative(c.one_way->tolerance))
-        return false;
-    return std::visit(
-        [](auto &s) {
-            using T = std::decay_t<decltype(s)>;
-            if constexpr (std::is_same_v<T, AabbShape>)
-                return finite(s.local_rect.position()) && finite(s.local_rect.size()) &&
-                       s.local_rect.width() > 0 && s.local_rect.height() > 0;
-            else
-                return finite(s.local_center) && std::isfinite(s.radius) && s.radius > 0;
-        },
-        c.shape);
-}
 void PhysicsWorld::Impl::create_shape(Shape &s, b2BodyId body)
 {
     auto &c = s.definition;
     if (!c.enabled || c.response == CollisionResponse::Ignore)
         return;
     auto d = b2DefaultShapeDef();
+    d.updateBodyMass = false;
     d.isSensor = c.response == CollisionResponse::Overlap;
     d.enableSensorEvents = true;
     d.enableContactEvents = true;
@@ -77,25 +153,21 @@ void PhysicsWorld::Impl::create_shape(Shape &s, b2BodyId body)
     d.material.friction = c.material.friction;
     d.material.restitution = c.material.restitution;
     d.density = d.isSensor && !c.sensor_contributes_mass ? 0 : c.density.kilograms_per_square_meter;
-    std::visit(
-        [&](auto &shape) {
-            using T = std::decay_t<decltype(shape)>;
-            if constexpr (std::is_same_v<T, AabbShape>)
-            {
-                auto r = shape.local_rect;
-                auto poly =
-                    b2MakeOffsetBox(units.to_length(r.width() / 2), units.to_length(r.height() / 2),
-                                    to(r.center()), b2Rot_identity);
-                s.native = b2CreatePolygonShape(body, &d, &poly);
-            }
-            else
-            {
-                b2Circle circle{to(shape.local_center), units.to_length(shape.radius)};
-                s.native = b2CreateCircleShape(body, &d, &circle);
-            }
-        },
-        c.shape);
-    mapping.emplace(b2StoreShapeId(s.native), Mapping{s.target, 0});
+    const auto geometry = detail::shape_geometry(c.shape, units);
+    if (!geometry) return;
+    switch (geometry->kind)
+    {
+    case detail::ShapeGeometry::Kind::Segment:
+        d.density=0;s.native=b2CreateSegmentShape(body,&d,&geometry->segment);break;
+    case detail::ShapeGeometry::Kind::Circle:
+        s.native = b2CreateCircleShape(body, &d, &geometry->circle); break;
+    case detail::ShapeGeometry::Kind::Capsule:
+        s.native = b2CreateCapsuleShape(body, &d, &geometry->capsule); break;
+    case detail::ShapeGeometry::Kind::Polygon:
+        s.native = b2CreatePolygonShape(body, &d, &geometry->polygon); break;
+    }
+    try { mapping.emplace(b2StoreShapeId(s.native), Mapping{s.target, 0}); }
+    catch (...) { b2DestroyShape(s.native, false); s.native = b2_nullShapeId; throw; }
 }
 void PhysicsWorld::Impl::retire(Shape &s)
 {
@@ -118,22 +190,43 @@ bool PhysicsWorld::Impl::bullet(const Object &o) const
 void PhysicsWorld::Impl::mass(Object &o)
 {
     if (o.definition.type != BodyType::Dynamic)
-        return;
-    b2Body_ApplyMassFromShapes(o.native);
-    if (o.definition.mass_policy == MassPolicy::ExplicitMass)
     {
-        auto m = b2Body_GetMassData(o.native);
-        if (m.mass > 0)
-            m.rotationalInertia *= o.definition.mass / m.mass;
-        m.mass = o.definition.mass;
-        b2Body_SetMassData(o.native, m);
+        // Kinematic extents are also required by native target-transform sleeping.
+        b2Body_ApplyMassFromShapes(o.native);
+        return;
     }
+    const auto data = resolve_mass(o, o.definition.mass_properties);
+    if (!data) return; // All mutating entry points validate their candidate first.
+    const auto old_center = b2Body_GetWorldCenterOfMass(o.native);
+    const auto velocity = b2Body_GetLinearVelocity(o.native);
+    const float angular_velocity = b2Body_GetAngularVelocity(o.native);
+    b2Body_SetMassData(o.native, *data);
+    const auto delta = b2Sub(b2Body_GetWorldCenterOfMass(o.native), old_center);
+    if (angular_velocity != 0 && (delta.x != 0 || delta.y != 0))
+        b2Body_SetLinearVelocity(o.native, b2Add(velocity, b2CrossSV(angular_velocity, delta)));
+}
+std::optional<b2MassData> PhysicsWorld::Impl::resolve_mass(const Object &o, const MassProperties &properties,
+    ColliderId replacing, const Collider *replacement) const
+{
+    detail::MassBuilder builder(units);
+    for (auto id : o.shapes)
+        builder.add(id == replacing && replacement ? *replacement : shapes.at(id).definition);
+    auto data = builder.finish(o.definition.type, properties, o.definition.fixed_rotation);
+    if (data && o.definition.type == BodyType::Dynamic && B2_IS_NON_NULL(o.native) &&
+        !valid_mass_motion(*data, b2Body_GetTransform(o.native), b2Body_GetWorldCenterOfMass(o.native),
+            b2Body_GetLinearVelocity(o.native), b2Body_GetAngularVelocity(o.native), units)) return {};
+    return data;
 }
 void PhysicsWorld::Impl::destroy_object(std::uint64_t h)
 {
     auto it = objects.find(h);
     if (it == objects.end())
         return;
+    for(auto chain=chains.begin();chain!=chains.end();)
+    {
+        auto current=chain++;
+        if(current->second->owner.value==h)destroy_chain_record(current->first,true);
+    }
     if (it->second.owner)
         it->second.owner->set_position(it->second.current.position);
     for (auto id : it->second.shapes)
@@ -169,6 +262,7 @@ void PhysicsWorld::Impl::clear()
             o.owner->set_position(o.current.position);
     commands.clear();
     joints.clear();
+    chains.clear();
     objects.clear();
     shapes.clear();
     tile_shapes.clear();
@@ -187,11 +281,11 @@ void PhysicsWorld::Impl::clear()
     b2World_SetPreSolveCallback(world, pre_solve, this);
     tile_body = b2_nullBodyId;
     tiles = nullptr;
-    accumulator = 0;
-    dropped = 0;
+    interpolation_alpha = 0.0;
     pending_reset = false;
     stats = {};
     debug.clear();
+    debug_spare.clear();
 }
 void PhysicsWorld::Impl::flush()
 {
@@ -200,10 +294,80 @@ void PhysicsWorld::Impl::flush()
         clear();
         return;
     }
-    auto pending = std::move(commands);
-    commands.clear();
-    for (auto &f : pending)
-        f();
+    std::vector<std::function<void()>> pending(std::size_t{0});
+    pending.swap(commands);
+    try
+    {
+        for (auto &f : pending)
+            f();
+    }
+    catch (...)
+    {
+        commands.clear();
+        rollback_aborted_registrations();
+        throw;
+    }
+}
+void PhysicsWorld::Impl::rollback_registration(std::uint64_t h) noexcept
+{
+    for(auto i=chains.begin();i!=chains.end();)
+    {
+        auto current=i++;
+        if(current->second->owner.value==h)destroy_chain_record(current->first,false,B2_IS_NULL(current->second->native));
+    }
+    auto object = objects.find(h);
+    if (object == objects.end())
+        return;
+    std::erase_if(joints, [h](const auto& entry) {
+        return entry.second.first.value == h || entry.second.second.value == h;
+    });
+    for (auto id : object->second.shapes)
+    {
+        auto shape = shapes.find(id);
+        if (shape == shapes.end())
+            continue;
+        if (B2_IS_NON_NULL(shape->second.native))
+            mapping.erase(b2StoreShapeId(shape->second.native));
+        shapes.erase(shape);
+    }
+    if (B2_IS_NON_NULL(object->second.native))
+        b2DestroyBody(object->second.native);
+    objects.erase(object);
+}
+void PhysicsWorld::Impl::rollback_aborted_registrations() noexcept
+{
+    for(auto i=chains.begin();i!=chains.end();)
+    {
+        auto current=i++;
+        const auto& chain=*current->second;
+        if(chain.removed||B2_IS_NULL(chain.native)||!get(chain.owner))
+            destroy_chain_record(current->first,false,B2_IS_NULL(chain.native));
+    }
+    for (auto i=joints.begin();i!=joints.end();)
+    {
+        auto& joint=i->second;
+        if (B2_IS_NULL(joint.native)||joint.removed||!get(joint.first)||!get(joint.second))
+        {
+            if (B2_IS_NON_NULL(joint.native))
+            {
+                b2Joint_SetCollideConnected(joint.native,true);
+                b2Joint_WakeBodies(joint.native);
+                b2DestroyJoint(joint.native);
+            }
+            i=joints.erase(i);
+        }
+        else ++i;
+    }
+    for (auto it = objects.begin(); it != objects.end();)
+    {
+        if (!it->second.pending_creation && !it->second.removed)
+        {
+            ++it;
+            continue;
+        }
+        const auto id = it++->first;
+        rollback_registration(id);
+    }
 }
 PhysicsWorld::PhysicsWorld(PhysicsWorldConfig c) : _impl(std::make_unique<Impl>(c))
 {
@@ -212,10 +376,6 @@ PhysicsWorld::~PhysicsWorld() = default;
 const PhysicsWorldConfig &PhysicsWorld::config() const noexcept
 {
     return _impl->config;
-}
-double PhysicsWorld::accumulator_seconds() const noexcept
-{
-    return _impl->accumulator;
 }
 const PhysicsStepStats &PhysicsWorld::last_step_stats() const noexcept
 {
@@ -236,9 +396,25 @@ PhysicsObjectHandle PhysicsWorld::register_object(elysia::core::GameObject &owne
     if (owner.is_destroyed() || !finite(owner.position()) || !finite(d.velocity) ||
         !std::isfinite(d.angle) || !std::isfinite(d.angular_velocity) ||
         !std::isfinite(d.gravity_scale) || !nonnegative(d.linear_damping) ||
-        !nonnegative(d.angular_damping) || !std::isfinite(d.mass) || d.mass <= 0 ||
-        !std::ranges::all_of(cs, Impl::valid))
+        !nonnegative(d.angular_damping))
         return {};
+    if (d.type==BodyType::Dynamic && std::ranges::any_of(cs,[](const Collider& c){
+        return std::holds_alternative<SegmentShape>(c.shape);})) return {};
+    for (std::size_t index = 0; index < cs.size(); ++index)
+    {
+        if (const auto failure = collider_validation_failure(cs[index], p.config.units_per_meter))
+        {
+            log_invalid_collider_registration(owner, index, *failure, cs[index]);
+            return {};
+        }
+    }
+    detail::MassBuilder mass_builder(p.units);
+    for (const auto &collider : cs) mass_builder.add(collider);
+    const auto initial_mass = mass_builder.finish(d.type, d.mass_properties, d.fixed_rotation);
+    if (!initial_mass) return {};
+    const auto initial_position = p.to(owner.position());
+    if (d.type == BodyType::Dynamic && !valid_mass_motion(*initial_mass,
+        {initial_position, b2MakeRot(d.angle)}, initial_position, p.to(d.velocity), d.angular_velocity, p.units)) return {};
     for (auto &[id, o] : p.objects)
         if (o.owner == &owner)
             return o.removed ? PhysicsObjectHandle{} : PhysicsObjectHandle{id};
@@ -250,15 +426,35 @@ PhysicsObjectHandle PhysicsWorld::register_object(elysia::core::GameObject &owne
     o.owner = &owner;
     o.definition = d;
     o.previous = o.current = {owner.position(), d.angle};
-    for (auto c : cs)
+    o.pending_creation = true;
+    o.shapes.reserve(cs.size());
+    try
     {
-        auto id = p.next_shape++;
-        o.shapes.push_back(id);
-        p.shapes.emplace(id, Impl::Shape{{}, h, CollisionTarget::from_collider(id), c});
+        for (auto c : cs)
+        {
+            auto id = p.next_shape++;
+            p.shapes.emplace(id, Impl::Shape{{}, h, CollisionTarget::from_collider(id), c});
+            try { o.shapes.push_back(id); }
+            catch (...) { p.shapes.erase(id); throw; }
+        }
+        auto [entry,inserted]=p.objects.try_emplace(h.value);
+        auto& registered=entry->second;
+        registered.owner=o.owner;registered.definition=o.definition;
+        registered.previous=o.previous;registered.current=o.current;
+        registered.pending_creation=o.pending_creation;
+        registered.shapes.swap(o.shapes);
     }
-    p.objects.emplace(h.value, std::move(o));
-    p.enqueue([&p, h] {
-        auto &o = p.objects.at(h.value);
+    catch (...)
+    {
+        for (auto id : o.shapes)
+            p.shapes.erase(id);
+        throw;
+    }
+    auto create_native = [&p, h] {
+        auto it = p.objects.find(h.value);
+        if (it == p.objects.end() || it->second.removed || !it->second.owner)
+            return;
+        auto &o = it->second;
         auto d = b2DefaultBodyDef();
         d.type = type(o.definition.type);
         d.position = p.to(o.current.position);
@@ -276,7 +472,14 @@ PhysicsObjectHandle PhysicsWorld::register_object(elysia::core::GameObject &owne
         for (auto id : o.shapes)
             p.create_shape(p.shapes.at(id), o.native);
         p.mass(o);
-    });
+        o.pending_creation = false;
+    };
+    try { p.enqueue(create_native); }
+    catch (...)
+    {
+        p.rollback_registration(h.value);
+        throw;
+    }
     return h;
 }
 bool PhysicsWorld::unregister_object(PhysicsObjectHandle h)
@@ -285,11 +488,19 @@ bool PhysicsWorld::unregister_object(PhysicsObjectHandle h)
     auto *o = p.get(h);
     if (!o)
         return false;
+    if (o->pending_creation)
+    {
+        p.rollback_registration(h.value);
+        return true;
+    }
+    if (p.advancing)
+        p.enqueue([&p, h] { p.destroy_object(h.value); });
     o->removed = true;
     for (auto &[id, j] : p.joints)
         if (j.first == h || j.second == h)
             j.removed = true;
-    p.enqueue([&p, h] { p.destroy_object(h.value); });
+    if (!p.advancing)
+        p.destroy_object(h.value);
     return true;
 }
 bool PhysicsWorld::contains_object(PhysicsObjectHandle h) const noexcept
@@ -311,7 +522,9 @@ std::optional<PhysicsObjectHandle> PhysicsWorld::object_handle(
 bool PhysicsWorld::contains_collider(ColliderId id) const noexcept
 {
     auto it = _impl->shapes.find(id);
-    return it != _impl->shapes.end() && contains_object(it->second.owner);
+    if(it==_impl->shapes.end()||!contains_object(it->second.owner))return false;
+    if(it->second.chain.is_valid())return chain_state(it->second.chain).has_value();
+    return true;
 }
 std::size_t PhysicsWorld::registered_object_count() const noexcept
 {
@@ -324,7 +537,7 @@ std::size_t PhysicsWorld::registered_collider_count() const noexcept
 {
     std::size_t n = 0;
     for (auto &[id, s] : _impl->shapes)
-        n += contains_object(s.owner);
+        n += contains_collider(id);
     return n;
 }
 ColliderId PhysicsWorld::collider_id(PhysicsObjectHandle h, std::size_t index) const noexcept
@@ -334,8 +547,12 @@ ColliderId PhysicsWorld::collider_id(PhysicsObjectHandle h, std::size_t index) c
 }
 std::optional<BodyState> PhysicsWorld::body_state(PhysicsObjectHandle h) const noexcept
 {
-    auto &p = *_impl;
-    auto *o = p.get(h);
+    return _impl->read_body_state(h);
+}
+std::optional<BodyState> PhysicsWorld::Impl::read_body_state(PhysicsObjectHandle h) const noexcept
+{
+    const auto &p = *this;
+    const auto *o = p.get(h);
     if (!o || B2_IS_NULL(o->native))
         return {};
     auto id = o->native;
@@ -346,14 +563,35 @@ std::optional<BodyState> PhysicsWorld::body_state(PhysicsObjectHandle h) const n
                      b2Body_GetMass(id),
                      p.units.from_squared(b2Body_GetRotationalInertia(id)),
                      b2Body_IsAwake(id),
-                     b2Body_IsEnabled(id)};
+                     b2Body_IsEnabled(id),
+                     p.from(b2Body_GetLocalCenterOfMass(id)),
+                     p.from(b2Body_GetWorldCenterOfMass(id))};
+}
+std::optional<MassProperties> PhysicsWorld::mass_properties(PhysicsObjectHandle h) const noexcept
+{
+    const auto *o = _impl->get(h);
+    return o && B2_IS_NON_NULL(o->native) ? std::optional{o->definition.mass_properties} : std::nullopt;
+}
+bool PhysicsWorld::set_mass_properties(PhysicsObjectHandle h, const MassProperties &properties)
+{
+    auto &p = *_impl;
+    const auto *o = p.get(h);
+    if (!o || !p.resolve_mass(*o, properties)) return false;
+    p.enqueue([&p, h, properties] {
+        auto *object = p.get(h);
+        if (!object || B2_IS_NULL(object->native) || !p.resolve_mass(*object, properties)) return;
+        object->definition.mass_properties = properties;
+        if (b2Body_IsEnabled(object->native)) b2Body_SetAwake(object->native, true);
+        p.mass(*object);
+    });
+    return true;
 }
 std::optional<PhysicsPose> PhysicsWorld::render_pose(PhysicsObjectHandle h) const noexcept
 {
     auto *o = _impl->get(h);
     if (!o)
         return {};
-    float a = float(std::clamp(_impl->accumulator / _impl->config.fixed_delta_seconds, 0.0, 1.0));
+    const float a = static_cast<float>(_impl->interpolation_alpha);
     float delta = std::remainder(o->current.angle - o->previous.angle, 2 * 3.14159265358979323846f);
     return PhysicsPose{o->previous.position + (o->current.position - o->previous.position) * a,
                        o->previous.angle + delta * a};
@@ -366,7 +604,7 @@ bool PhysicsWorld::set_velocity(PhysicsObjectHandle h, elysia::core::Vector2 v)
     p.enqueue([&p, h, v] {
         auto *o = p.raw(h);
         if (o)
-            b2Body_SetLinearVelocity(o->native, p.to(v));
+            {o->clear_debug_target();b2Body_SetLinearVelocity(o->native, p.to(v));}
     });
     return true;
 }
@@ -378,6 +616,7 @@ bool PhysicsWorld::set_velocity_x(PhysicsObjectHandle h, float v)
     p.enqueue([&p, h, v] {
         if (auto *o = p.raw(h))
         {
+            o->clear_debug_target();
             auto velocity = b2Body_GetLinearVelocity(o->native);
             velocity.x = p.units.to_length(v);
             b2Body_SetLinearVelocity(o->native, velocity);
@@ -393,6 +632,7 @@ bool PhysicsWorld::set_velocity_y(PhysicsObjectHandle h, float v)
     p.enqueue([&p, h, v] {
         if (auto *o = p.raw(h))
         {
+            o->clear_debug_target();
             auto velocity = b2Body_GetLinearVelocity(o->native);
             velocity.y = p.units.to_length(v);
             b2Body_SetLinearVelocity(o->native, velocity);
@@ -407,7 +647,7 @@ bool PhysicsWorld::set_angular_velocity(PhysicsObjectHandle h, float v)
         return false;
     p.enqueue([&p, h, v] {
         if (auto *o = p.raw(h))
-            b2Body_SetAngularVelocity(o->native, v);
+            {o->clear_debug_target();b2Body_SetAngularVelocity(o->native, v);}
     });
     return true;
 }
@@ -445,6 +685,7 @@ bool PhysicsWorld::set_body_enabled(PhysicsObjectHandle h, bool v)
         if (auto *o = p.raw(h))
         {
             o->definition.enabled = v;
+            if(!v)o->clear_debug_target();
             if (v && o->owner->is_active())
                 b2Body_Enable(o->native);
             else
@@ -523,10 +764,17 @@ bool PhysicsWorld::teleport_object(PhysicsObjectHandle h, elysia::core::Vector2 
 }
 void PhysicsWorld::Impl::transform(Object &o, PhysicsPose pose, TeleportVelocityMode mode)
 {
+    o.clear_debug_target();
     for (auto id : o.shapes)
         cache.invalidate_target(CollisionTarget::from_collider(id));
+    for (const auto& [id, chain] : chains)
+        if (raw(chain->owner) == &o) cache.invalidate_targets(chain->targets);
     b2Body_SetTransform(o.native, to(pose.position), b2MakeRot(pose.angle));
     b2Body_SetAwake(o.native, true);
+    // Moving a static anchor must also wake its sleeping constrained bodies.
+    for(const auto& [id,joint]:joints)
+        if(!joint.removed&&B2_IS_NON_NULL(joint.native)&&(raw(joint.first)==&o||raw(joint.second)==&o))
+            b2Joint_WakeBodies(joint.native);
     o.previous = o.current = pose;
     o.owner->set_position(pose.position);
     if (mode == TeleportVelocityMode::Clear)
@@ -549,8 +797,19 @@ bool PhysicsWorld::set_transform(PhysicsObjectHandle h, PhysicsPose pose, Telepo
 bool PhysicsWorld::update_collider(ColliderId id, const Collider &c)
 {
     auto &p = *_impl;
-    if (!contains_collider(id) || !Impl::valid(c))
+    if (!contains_collider(id) || p.shapes.at(id).chain.is_valid())
         return false;
+    if (auto* owner=p.get(p.shapes.at(id).owner); !owner ||
+        (owner->definition.type==BodyType::Dynamic && std::holds_alternative<SegmentShape>(c.shape))) return false;
+    if (const auto failure = collider_validation_failure(c, p.config.units_per_meter))
+    {
+        const auto key = std::pair{id, static_cast<std::uint8_t>(*failure)};
+        if (p.logged_invalid_collider_updates.insert(key).second)
+            log_invalid_collider_update(id, *failure, c);
+        return false;
+    }
+    const auto *mass_owner = p.get(p.shapes.at(id).owner);
+    if (!p.resolve_mass(*mass_owner, mass_owner->definition.mass_properties, id, &c)) return false;
     p.enqueue([&p, id, c] {
         auto it = p.shapes.find(id);
         if (it == p.shapes.end())
@@ -558,22 +817,37 @@ bool PhysicsWorld::update_collider(ColliderId id, const Collider &c)
         auto &s = it->second;
         if (s.definition == c)
             return;
-        p.retire(s);
-        s.definition = c;
-        if (auto *o = p.raw(s.owner))
+        auto *o = p.get(s.owner);
+        if (!o || B2_IS_NULL(o->native)) return;
+        if (!p.resolve_mass(*o, o->definition.mass_properties, id, &c)) return;
+        Impl::Shape replacement{{},s.owner,s.target,c};
+        p.create_shape(replacement,o->native);
+        try { p.retire(s); }
+        catch (...)
         {
-            p.create_shape(s, o->native);
-            p.mass(*o);
-            b2Body_SetBullet(o->native, p.bullet(*o));
+            if (B2_IS_NON_NULL(replacement.native))
+            {
+                p.mapping.erase(b2StoreShapeId(replacement.native));
+                b2DestroyShape(replacement.native,false);
+            }
+            throw;
         }
+        s=replacement;
+        p.mass(*o);
+        b2Body_SetBullet(o->native,p.bullet(*o));
     });
     return true;
 }
 bool PhysicsWorld::set_collider_enabled(ColliderId id, bool enabled)
 {
     auto &p = *_impl;
-    if (!contains_collider(id))
+    if (!contains_collider(id) || p.shapes.at(id).chain.is_valid())
         return false;
+    const auto &shape = p.shapes.at(id);
+    auto candidate = shape.definition;
+    candidate.enabled = enabled;
+    const auto *owner = p.get(shape.owner);
+    if (!owner || !p.resolve_mass(*owner, owner->definition.mass_properties, id, &candidate)) return false;
     p.enqueue([&p, id, enabled] {
         auto it = p.shapes.find(id);
         if (it == p.shapes.end())
@@ -581,6 +855,10 @@ bool PhysicsWorld::set_collider_enabled(ColliderId id, bool enabled)
         auto &s = it->second;
         if (s.definition.enabled == enabled)
             return;
+        auto candidate = s.definition;
+        candidate.enabled = enabled;
+        auto *owner = p.get(s.owner);
+        if (!owner || !p.resolve_mass(*owner, owner->definition.mass_properties, id, &candidate)) return;
         p.retire(s);
         s.definition.enabled = enabled;
         if (auto *o = p.raw(s.owner))
@@ -642,6 +920,13 @@ PhysicsContactState PhysicsWorld::contact_state(PhysicsObjectHandle h) const noe
             s.wall_left |= c.wall_left;
             s.wall_right |= c.wall_right;
         }
+    for(const auto& [id,chain]:_impl->chains)
+        if(chain->owner==h&&!chain->removed)
+            for(auto collider:chain->colliders)
+            {
+                auto c=contact_state(CollisionTarget::from_collider(collider));
+                s.grounded|=c.grounded;s.ceiling|=c.ceiling;s.wall_left|=c.wall_left;s.wall_right|=c.wall_right;
+            }
     return s;
 }
 bool PhysicsWorld::request_pass_through(ColliderId actor, CollisionTarget support)
@@ -689,20 +974,8 @@ void PhysicsWorld::Impl::prepare_snapshot()
         auto previous_transform = transform;
         if (auto *object = get(s.owner))
             previous_transform = {to(object->previous.position), b2MakeRot(object->previous.angle)};
-        b2AABB bounds;
-        b2AABB previous_bounds;
-        if (b2Shape_GetType(s.native) == b2_circleShape)
-        {
-            auto circle = b2Shape_GetCircle(s.native);
-            bounds = b2ComputeCircleAABB(&circle, transform);
-            previous_bounds = b2ComputeCircleAABB(&circle, previous_transform);
-        }
-        else
-        {
-            auto polygon = b2Shape_GetPolygon(s.native);
-            bounds = b2ComputePolygonAABB(&polygon, transform);
-            previous_bounds = b2ComputePolygonAABB(&polygon, previous_transform);
-        }
+        auto bounds = detail::shape_bounds(s.native, transform);
+        auto previous_bounds = detail::shape_bounds(s.native, previous_transform);
         unsigned internal_faces = 0;
         if (s.target.kind == CollisionTargetKind::Tile && !s.definition.one_way && tiles &&
             s.target.tile.x >= 0 && s.target.tile.x < tiles->columns() && s.target.tile.y >= 0 &&
@@ -900,23 +1173,22 @@ void PhysicsWorld::Impl::collect(std::vector<CollisionContact> &contacts)
     std::erase_if(mapping,
                   [&](auto &v) { return v.second.retire_after && v.second.retire_after <= epoch; });
 }
-std::uint32_t PhysicsWorld::advance(double dt)
+void PhysicsWorld::step(double fixed_delta_seconds)
 {
     auto &p = *_impl;
-    if (!std::isfinite(dt) || dt <= 0 || p.advancing)
-        return 0;
-    p.accumulator += dt;
-    std::uint32_t steps = 0;
+    if (!std::isfinite(fixed_delta_seconds) || fixed_delta_seconds <= 0.0)
+        throw std::invalid_argument("PhysicsWorld::step requires a finite positive delta.");
+    if (p.advancing)
+        throw std::logic_error("PhysicsWorld::step cannot be called reentrantly.");
+
     p.advancing = true;
     try
     {
-        while (p.accumulator + std::numeric_limits<double>::epsilon() >=
-                   p.config.fixed_delta_seconds &&
-               steps < p.config.max_steps_per_advance)
+        const auto start = std::chrono::steady_clock::now();
+        const bool reset_before_step = p.pending_reset;
+        p.flush();
+        if (!reset_before_step)
         {
-            p.accumulator -= p.config.fixed_delta_seconds;
-            ++steps;
-            auto start = std::chrono::steady_clock::now();
             std::vector<std::uint64_t> participants;
             for (auto &[id, o] : p.objects)
                 participants.push_back(id);
@@ -927,98 +1199,106 @@ std::uint32_t PhysicsWorld::advance(double dt)
                     break;
                 if (!o.removed && o.owner->is_active() && !o.owner->is_destroyed())
                     if (auto *participant = dynamic_cast<PhysicsStepParticipant *>(o.owner))
-                        participant->fixed_update(p.config.fixed_delta_seconds);
+                        participant->fixed_update(fixed_delta_seconds);
             }
             bool reset = p.pending_reset;
             p.flush();
-            if (reset)
-                break;
-            std::vector<std::uint64_t> dead;
-            for (auto &[id, o] : p.objects)
+            if (!reset)
             {
-                if (o.owner->is_destroyed())
+                std::vector<std::uint64_t> dead(std::size_t{0});
+                for (auto &[id, o] : p.objects)
                 {
-                    dead.push_back(id);
-                    continue;
+                    if (o.owner->is_destroyed())
+                    {
+                        dead.push_back(id);
+                        continue;
+                    }
+                    const bool enabled = o.definition.enabled && o.owner->is_active();
+                    if(!enabled)o.clear_debug_target();
+                    if (enabled != b2Body_IsEnabled(o.native))
+                    {
+                        if (enabled)
+                            b2Body_Enable(o.native);
+                        else
+                            b2Body_Disable(o.native);
+                    }
                 }
-                bool enabled = o.definition.enabled && o.owner->is_active();
-                if (enabled != b2Body_IsEnabled(o.native))
+                for (const auto id : dead)
+                    p.destroy_object(id);
+                p.refresh_joint_targets();
+                p.prepare_snapshot();
+                for (auto &[id, o] : p.objects)
                 {
-                    if (enabled)
-                        b2Body_Enable(o.native);
-                    else
-                        b2Body_Disable(o.native);
+                    o.previous = o.current;
+                    o.completed_debug_target=std::exchange(o.pending_debug_target,std::nullopt);
+                }
+                b2World_Step(p.world, static_cast<float>(fixed_delta_seconds),
+                             static_cast<int>(p.config.sub_steps));
+                ++p.epoch;
+                std::vector<CollisionContact> contacts(std::size_t{0});
+                p.collect(contacts);
+                std::vector<CollisionEvent> events(std::size_t{0});
+                p.cache.update(contacts, events);
+                for (auto &[id, o] : p.objects)
+                {
+                    o.current = {p.from(b2Body_GetPosition(o.native)),
+                                 b2Rot_GetAngle(b2Body_GetRotation(o.native))};
+                    o.owner->set_position(o.current.position);
+                }
+                p.stats.registered_objects = registered_object_count();
+                p.stats.registered_colliders = registered_collider_count();
+                p.stats.contacts = contacts.size();
+                const auto listeners = p.listeners;
+                for (const auto &event : events)
+                    for (auto *listener : listeners)
+                        listener->on_collision_event(event);
+                reset = p.pending_reset;
+                p.flush();
+                if (!reset)
+                {
+                    p.stats.step_milliseconds =
+                        std::chrono::duration<double, std::milli>(
+                            std::chrono::steady_clock::now() - start)
+                            .count();
+                    p.stats.awake_bodies = b2World_GetAwakeBodyCount(p.world);
+                    p.stats.joints = p.joints.size();
+                    p.stats.chains = p.chains.size();
                 }
             }
-            for (auto id : dead)
-                p.destroy_object(id);
-            p.prepare_snapshot();
-            for (auto &[id, o] : p.objects)
-                o.previous = o.current;
-            b2World_Step(p.world, float(p.config.fixed_delta_seconds), int(p.config.sub_steps));
-            ++p.epoch;
-            std::vector<CollisionContact> contacts;
-            p.collect(contacts);
-            std::vector<CollisionEvent> events;
-            p.cache.update(contacts, events);
-            for (auto &[id, o] : p.objects)
-            {
-                o.current = {p.from(b2Body_GetPosition(o.native)),
-                             b2Rot_GetAngle(b2Body_GetRotation(o.native))};
-                o.owner->set_position(o.current.position);
-            }
-            p.stats.registered_objects = registered_object_count();
-            p.stats.registered_colliders = registered_collider_count();
-            p.stats.contacts = contacts.size();
-            auto listeners = p.listeners;
-            for (auto &e : events)
-                for (auto *l : listeners)
-                    l->on_collision_event(e);
-            reset = p.pending_reset;
-            p.flush();
-            if (reset)
-                break;
-            p.stats.step_milliseconds =
-                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
-                    .count();
-            p.stats.awake_bodies = b2World_GetAwakeBodyCount(p.world);
-            p.stats.joints = p.joints.size();
         }
-        if (p.accumulator >= p.config.fixed_delta_seconds)
-        {
-            double n = std::floor(p.accumulator / p.config.fixed_delta_seconds);
-            auto room = std::numeric_limits<std::uint64_t>::max() - p.dropped;
-            p.dropped += n >= double(room) ? room : std::uint64_t(n);
-            p.accumulator = std::fmod(p.accumulator, p.config.fixed_delta_seconds);
-        }
-        p.stats.dropped_fixed_steps = p.dropped;
         p.advancing = false;
-        p.capture_debug();
-        p.debug.interpolation_alpha = float(std::clamp(p.accumulator / p.config.fixed_delta_seconds, 0.0, 1.0));
-        for (auto &[id, o] : p.objects)
-        {
-            auto pose = render_pose({id});
-            if (pose)
-                o.owner->_render_offset = pose->position - o.current.position;
-        }
     }
     catch (...)
     {
+        p.commands.clear();
+        p.rollback_aborted_registrations();
         p.advancing = false;
         throw;
     }
-    return steps;
 }
-void PhysicsWorld::set_debug_capture(PhysicsDebugCapture c) noexcept
+
+void PhysicsWorld::finalize_frame(double interpolation_alpha)
+{
+    auto &p = *_impl;
+    p.interpolation_alpha = std::clamp(interpolation_alpha, 0.0, 1.0);
+    p.capture_debug(p.capture);
+    p.debug.interpolation_alpha = static_cast<float>(p.interpolation_alpha);
+    for (auto &[id, object] : p.objects)
+    {
+        const auto pose = render_pose({id});
+        if (pose)
+            object.owner->_render_offset = pose->position - object.current.position;
+    }
+}
+void PhysicsWorld::set_debug_capture(PhysicsDebugCapture c)
 {
     constexpr auto valid_bits = static_cast<std::uint8_t>(PhysicsDebugCapture::All);
     c = static_cast<PhysicsDebugCapture>(static_cast<std::uint8_t>(c) & valid_bits);
     if (_impl->capture == c)
         return;
+    _impl->capture_debug(c);
     _impl->capture = c;
-    _impl->debug.clear();
-    _impl->capture_debug();
-    _impl->debug.interpolation_alpha = float(std::clamp(_impl->accumulator / _impl->config.fixed_delta_seconds, 0.0, 1.0));
+    _impl->debug.interpolation_alpha = static_cast<float>(_impl->interpolation_alpha);
 }
 PhysicsDebugCapture PhysicsWorld::debug_capture() const noexcept
 {

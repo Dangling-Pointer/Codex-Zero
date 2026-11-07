@@ -56,7 +56,12 @@ std::expected<Value,BootstrapFailure> read_value(
     if (!node.contains(field) || !predicate(node.at(field)))
         return std::unexpected(app_failure(path,std::move(message),pointer));
     try { return node.at(field).get<Value>(); }
-    catch (const std::exception& exception)
+    catch (const Json::type_error& exception)
+    {
+        return std::unexpected(app_failure(path,
+            "AppConfig value conversion failed: " + std::string(exception.what()),pointer));
+    }
+    catch (const Json::out_of_range& exception)
     {
         return std::unexpected(app_failure(path,
             "AppConfig value conversion failed: " + std::string(exception.what()),pointer));

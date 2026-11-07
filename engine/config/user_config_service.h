@@ -9,6 +9,8 @@
 #include <memory>
 #include <string_view>
 
+#define ELYSIA_USER_CONFIG (::elysia::config::UserConfigService::instance())
+
 namespace elysia::config
 {
 class IUserConfigChangeHandler

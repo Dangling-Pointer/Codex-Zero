@@ -67,9 +67,9 @@ elysia::core::Vector2 Camera::world_viewport_size() const noexcept
 float Camera::clamp_zoom(float zoom) noexcept
 {
     if (!std::isfinite(zoom))
-        return k_default_zoom;
+        return kDefaultZoom;
 
-    return std::clamp(zoom, k_min_zoom, k_max_zoom);
+    return std::clamp(zoom, kMinZoom, kMaxZoom);
 }
 
 elysia::core::Rect Camera::view_rect() const noexcept

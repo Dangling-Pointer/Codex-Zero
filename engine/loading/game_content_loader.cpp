@@ -120,8 +120,22 @@ std::expected<void,ContentLoadFailure> GameContentLoader::start(
 	}
 	_load_plan = std::move(*load_plan);
 
-	if (!initialize_streaming_work())
+	try
+	{
+		if (!initialize_streaming_work())
+			return std::unexpected(*_failure);
+	}
+	catch (const std::exception& error)
+	{
+		fail(make_content_load_failure(ContentLoadError::Plan,
+			std::string("Content worker startup failed: ") + error.what()));
 		return std::unexpected(*_failure);
+	}
+	catch (...)
+	{
+		fail(make_content_load_failure(ContentLoadError::Plan,"Unknown content worker startup exception."));
+		return std::unexpected(*_failure);
+	}
 
 	_state = GameContentLoaderState::StreamingTextureAndAtlasWork;
 	_progress = 0.0f;
@@ -149,8 +163,11 @@ void GameContentLoader::update()
 			return;
 		}
 
+		if (handle_worker_exception()) return;
 		dispatch_prepare_jobs();
+		if (handle_worker_exception()) return;
 		drain_completed_prepare_results();
+		if (handle_worker_exception()) return;
 		if (!commit_ready_streaming_results())
 			return;
 
@@ -296,6 +313,7 @@ void GameContentLoader::reset_streaming_state()
 	_next_atlas_frame_task_index = 0;
 	_dispatch_texture_turn = true;
 	_prepare_jobs.clear();
+	_worker_exception.reset();
 	_completed_texture_results.clear();
 	_completed_atlas_frame_results.clear();
 	_ready_texture_results.clear();
@@ -318,15 +336,36 @@ void GameContentLoader::start_worker_threads()
 	if (worker_count == 0)
 		return;
 
-	_worker_threads.reserve(worker_count);
-	for (std::size_t index = 0; index < worker_count; ++index)
-		_worker_threads.emplace_back(&GameContentLoader::worker_loop, this);
+	try
+	{
+		_worker_threads.reserve(worker_count);
+		for (std::size_t index = 0; index < worker_count; ++index)
+		{
+			if (_worker_probe) _worker_probe(WorkerStage::Starting,index);
+			_worker_threads.emplace_back(&GameContentLoader::worker_loop, this);
+		}
+	}
+	catch (...)
+	{
+		shutdown_worker_threads();
+		throw;
+	}
+}
+
+void GameContentLoader::request_worker_stop()
+{
+	// Publish the predicate while holding the wait mutex, so notification cannot
+	// slip between a worker's predicate check and its actual wait.
+	{
+		std::lock_guard<std::mutex> lock(_prepare_mutex);
+		_stop_workers.store(true);
+	}
+	_prepare_cv.notify_all();
 }
 
 void GameContentLoader::shutdown_worker_threads()
 {
-	_stop_workers.store(true);
-	_prepare_cv.notify_all();
+	request_worker_stop();
 
 	for (std::thread& worker : _worker_threads)
 	{
@@ -334,63 +373,114 @@ void GameContentLoader::shutdown_worker_threads()
 			worker.join();
 	}
 	_worker_threads.clear();
+	// Producers run on the main thread; after join no worker owns a task.
+	std::lock_guard<std::mutex> lock(_prepare_mutex);
+	_prepare_jobs.clear();
+	_in_flight_prepare_job_count.store(0);
 }
 
 void GameContentLoader::worker_loop()
 {
-	elysia::resources::SurfaceLoader surface_loader;
-	elysia::resources::AtlasBuildPreparer atlas_build_preparer;
-
-	for (;;)
+	std::optional<PrepareJob> active_job;
+	WorkerStage worker_stage = WorkerStage::Starting;
+	try
 	{
-		PrepareJob job;
+		elysia::resources::SurfaceLoader surface_loader;
+		elysia::resources::AtlasBuildPreparer atlas_build_preparer;
+		for (;;)
 		{
-			std::unique_lock<std::mutex> lock(_prepare_mutex);
-			_prepare_cv.wait(lock, [this]()
 			{
-				return _stop_workers.load() || !_prepare_jobs.empty();
-			});
-
-			if (_stop_workers.load() && _prepare_jobs.empty())
-				return;
-
-			job = std::move(_prepare_jobs.front());
-			_prepare_jobs.pop_front();
-		}
-
-		if (std::holds_alternative<elysia::resources::TextureLoadRequest>(job.payload))
-		{
-			const elysia::resources::TextureLoadRequest& texture_request =
-				std::get<elysia::resources::TextureLoadRequest>(job.payload);
-
-			elysia::resources::SurfaceLoadRequest surface_request;
-			surface_request._asset_key = texture_request.key;
-			surface_request._subject_type = "texture";
-			surface_request._frame_path = texture_request.file_path;
-			surface_request._frame_index = 0;
-			surface_request._origin = texture_request.origin;
-
-			auto surface_result =
-				surface_loader.load_surface(surface_request);
-			{
-				std::lock_guard<std::mutex> lock(_completed_results_mutex);
-				_completed_texture_results.push_back({ std::move(surface_result) });
+				std::unique_lock<std::mutex> lock(_prepare_mutex);
+				_prepare_cv.wait(lock,[this] { return _stop_workers.load() || !_prepare_jobs.empty(); });
+				if (_stop_workers.load()) return;
+				active_job.emplace(std::move(_prepare_jobs.front()));
+				_prepare_jobs.pop_front();
 			}
+			struct CompletionGuard
+			{
+				std::atomic<std::size_t>& count;
+				~CompletionGuard() { count.fetch_sub(1); }
+			} completion{_in_flight_prepare_job_count};
+			worker_stage = WorkerStage::Preparing;
+			if (_worker_probe) _worker_probe(worker_stage,0);
+			if (const auto* texture = std::get_if<elysia::resources::TextureLoadRequest>(&active_job->payload))
+			{
+				elysia::resources::SurfaceLoadRequest request;
+				request._asset_key = texture->key;
+				request._subject_type = "texture";
+				request._frame_path = texture->file_path;
+				request._origin = texture->origin;
+				auto result = surface_loader.load_surface(request);
+				worker_stage = WorkerStage::Publishing;
+				if (_worker_probe) _worker_probe(worker_stage,0);
+				std::lock_guard<std::mutex> lock(_completed_results_mutex);
+				_completed_texture_results.push_back({std::move(result)});
+			}
+			else
+			{
+				auto result = atlas_build_preparer.prepare_frame(
+					std::get<elysia::resources::AtlasFramePrepareTask>(active_job->payload));
+				worker_stage = WorkerStage::Publishing;
+				if (_worker_probe) _worker_probe(worker_stage,0);
+				std::lock_guard<std::mutex> lock(_completed_results_mutex);
+				_completed_atlas_frame_results.push_back({std::move(result)});
+			}
+			active_job.reset();
+		}
+	}
+	catch (...)
+	{
+		// Moving the job and exception_ptr into reserved member storage requires no queue allocation.
+		{
+			std::lock_guard<std::mutex> lock(_completed_results_mutex);
+			if (!_worker_exception)
+				_worker_exception.emplace(WorkerException{std::current_exception(),worker_stage,
+					std::move(active_job),std::source_location::current()});
+		}
+		request_worker_stop();
+	}
+}
+
+bool GameContentLoader::handle_worker_exception()
+{
+	std::optional<WorkerException> failure;
+	{
+		std::lock_guard<std::mutex> lock(_completed_results_mutex);
+		if (!_worker_exception) return false;
+		failure = std::move(_worker_exception);
+		_worker_exception.reset();
+	}
+	shutdown_worker_threads();
+	ContentLoadError stage = ContentLoadError::Plan;
+	std::string key;
+	std::filesystem::path path;
+	elysia::resources::ResourceOrigin declaration;
+	if (failure->job)
+	{
+		if (const auto* texture = std::get_if<elysia::resources::TextureLoadRequest>(&failure->job->payload))
+		{
+			stage = ContentLoadError::Texture;
+			key = texture->key; path = texture->file_path; declaration = texture->origin;
 		}
 		else
 		{
-			auto prepared_result =
-				atlas_build_preparer.prepare_frame(
-					std::get<elysia::resources::AtlasFramePrepareTask>(job.payload)
-				);
-			{
-				std::lock_guard<std::mutex> lock(_completed_results_mutex);
-				_completed_atlas_frame_results.push_back({ std::move(prepared_result) });
-			}
+			const auto& atlas = std::get<elysia::resources::AtlasFramePrepareTask>(failure->job->payload);
+			stage = ContentLoadError::Atlas;
+			key = atlas.atlas_key; path = atlas.frame_path; declaration = atlas.origin;
 		}
-
-		_in_flight_prepare_job_count.fetch_sub(1);
 	}
+	std::string message = "Unknown content worker exception.";
+	try { std::rethrow_exception(failure->cause); }
+	catch (const std::exception& error) { message = error.what(); }
+	catch (...) {}
+	const char* phase = failure->stage == WorkerStage::Publishing ? "publish"
+		: failure->stage == WorkerStage::Preparing ? "prepare" : "initialize";
+	message = std::string("Content worker ") + phase + ": " + message;
+	fail(from_resource_failure(stage,elysia::resources::make_resource_failure(
+		elysia::resources::ResourceError::DecodeFailed,std::move(message),
+		std::string(content_load_subject_type(stage)),std::move(key),std::move(path),
+		std::move(declaration),failure->origin)));
+	return true;
 }
 
 void GameContentLoader::dispatch_prepare_jobs()
@@ -404,10 +494,11 @@ void GameContentLoader::dispatch_prepare_jobs()
 		job.payload = _load_plan.texture_requests()[_next_texture_request_index++];
 		{
 			std::lock_guard<std::mutex> lock(_prepare_mutex);
+			if (_stop_workers.load()) return false;
 			_prepare_jobs.push_back(std::move(job));
+			_in_flight_prepare_job_count.fetch_add(1);
 		}
 
-		_in_flight_prepare_job_count.fetch_add(1);
 		_prepare_cv.notify_one();
 		return true;
 	};
@@ -421,10 +512,11 @@ void GameContentLoader::dispatch_prepare_jobs()
 		job.payload = _atlas_frame_tasks[_next_atlas_frame_task_index++];
 		{
 			std::lock_guard<std::mutex> lock(_prepare_mutex);
+			if (_stop_workers.load()) return false;
 			_prepare_jobs.push_back(std::move(job));
+			_in_flight_prepare_job_count.fetch_add(1);
 		}
 
-		_in_flight_prepare_job_count.fetch_add(1);
 		_prepare_cv.notify_one();
 		return true;
 	};
@@ -733,6 +825,8 @@ void GameContentLoader::update_progress_value()
 void GameContentLoader::fail(ContentLoadFailure failure)
 {
 	shutdown_worker_threads();
+	reset_streaming_state();
+	_stop_workers.store(true);
 	clear_loaded_content();
 	_config_snapshot.reset();
 	_failure = std::move(failure);

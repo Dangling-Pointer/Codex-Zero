@@ -70,6 +70,7 @@ public:
     void unregister_tooltip(class UiTooltip& tooltip) noexcept;
     [[nodiscard]] elysia::core::Rect content_bounds() const noexcept;
 
+    elysia::input::InputCapture input_capture() const noexcept override;
     void update(double delta) override;
     void on_ui_input_frame(const UiInputFrame& input) override;
     bool on_ui_input_event(const UiInputEvent& event) override;

@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <exception>
 
 namespace elysia::ui
 {
@@ -524,4 +525,29 @@ void UiChildHost::detach_theme_manager(UiThemeManager& manager) noexcept
     if (_theme_manager == &manager)
         _theme_manager = nullptr;
 }
+}
+
+elysia::input::InputCapture elysia::ui::UiChildHost::input_capture() const noexcept
+{
+    auto result = elysia::input::InputCapture::None;
+    for (const auto &child : _children)
+        if (child.element && child.element->is_active() && child.element->is_visible() &&
+            !child.element->is_destroyed())
+            result = result | child.element->input_capture();
+    return result;
+}
+
+void elysia::ui::UiChildHost::cancel_input_interaction()
+{
+    ensure_child_order_cache();
+    const auto snapshot = _logical_child_order;
+    std::exception_ptr first_failure;
+    for (const auto& handle : snapshot)
+        if (auto* child = handle.resolve())
+        {
+            try { child->cancel_input_interaction(); }
+            catch (...) { if (!first_failure) first_failure = std::current_exception(); }
+        }
+    if (first_failure)
+        std::rethrow_exception(first_failure);
 }

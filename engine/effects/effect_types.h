@@ -1,6 +1,7 @@
 #pragma once
 
 #include "animation/animation_effect.h"
+#include "effect_anchor.h"
 #include "number/floating_number_effect.h"
 
 #include <optional>
@@ -9,19 +10,6 @@
 
 namespace elysia::effects
 {
-enum class EffectAnchor
-{
-	TopLeft,
-	TopCenter,
-	TopRight,
-	CenterLeft,
-	Center,
-	CenterRight,
-	BottomLeft,
-	BottomCenter,
-	BottomRight
-};
-
 struct AnimationEffectDefinition
 {
 	std::string effect_key;

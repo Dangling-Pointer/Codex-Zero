@@ -3,7 +3,11 @@
 
 namespace elysia::ui
 {
-UiElement::~UiElement() = default;
+UiElement::~UiElement()
+{
+    if (_cancellation_lifetime)
+        _cancellation_lifetime->element = nullptr;
+}
 
 elysia::core::Vector2 UiElement::accumulated_presentation_translation() const noexcept
 {

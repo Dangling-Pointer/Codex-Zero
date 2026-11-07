@@ -76,6 +76,7 @@ inline constexpr Color deep_cobalt_blue{ 0, 43, 100, 255 }; // #002B64
 inline constexpr Color midnight_blue{ 12, 34, 78, 255 };    // #0C224E
 inline constexpr Color slate_blue{ 18, 28, 42, 224 };       // #121C2AE0
 inline constexpr Color abyss_blue{ 8, 16, 28, 255 };        // #08101C
+inline constexpr Color blue_glass_button_idle{ 27, 59, 112, 255 }; // #1B3B70
 
 // Elysia-inspired palette tokens. These stay semantic so built-in themes
 // can mix soft bridal pinks with deep ocean blues without hardcoding RGBs.
@@ -114,12 +115,26 @@ inline constexpr Color elysia_corruption_blue_focus{ 52, 121, 164, 255 }; // #34
 inline constexpr Color elysia_corruption_blue_active{ 29, 72, 111, 255 }; // #1D486F
 inline constexpr Color elysia_corruption_glow{ 104, 185, 208, 255 }; // #68B9D0
 inline constexpr Color elysia_corruption_ice{ 184, 238, 255, 255 };  // #B8EEFF
+inline constexpr Color elysia_rose_copper{ 142, 79, 85, 255 };       // #8E4F55
+inline constexpr Color elysia_rose_copper_focus{ 163, 94, 98, 255 }; // #A35E62
+inline constexpr Color elysia_rose_copper_active{ 113, 60, 69, 255 }; // #713C45
+inline constexpr Color elysia_rose_gold{ 229, 181, 155, 255 };       // #E5B59B
+inline constexpr Color elysia_rose_gold_focus{ 244, 210, 189, 255 }; // #F4D2BD
+inline constexpr Color elysia_rose_gold_active{ 255, 240, 227, 255 }; // #FFF0E3
+inline constexpr Color elysia_light_button_idle{ 255, 245, 251, 255 }; // #FFF5FB
+inline constexpr Color elysia_light_button_focus{ 245, 217, 239, 255 }; // #F5D9EF
+inline constexpr Color elysia_light_button_active{ 234, 193, 219, 255 }; // #EAC1DB
+inline constexpr Color elysia_dark_button_idle{ 74, 75, 134, 255 }; // #4A4B86
+inline constexpr Color elysia_dark_button_focus{ 98, 99, 163, 255 }; // #6263A3
+inline constexpr Color elysia_dark_button_active{ 52, 54, 97, 255 }; // #343661
 inline constexpr Color elysia_danger_crimson{ 122, 47, 72, 255 };   // #7A2F48
 inline constexpr Color elysia_danger_crimson_focus{ 150, 58, 87, 255 }; // #963A57
 inline constexpr Color elysia_danger_crimson_active{ 90, 35, 54, 255 }; // #5A2336
 
 // Evangelion-inspired palette tokens used by the built-in EVA themes.
 inline constexpr Color eva_unit00_rei_white{ 243, 246, 250, 255 };     // #F3F6FA
+inline constexpr Color eva_unit00_button_idle{ 255, 255, 255, 255 }; // #FFFFFF
+inline constexpr Color eva_unit00_primary_idle{ 195, 220, 239, 255 }; // #C3DCEF
 inline constexpr Color eva_unit00_frost_blue{ 220, 234, 246, 255 };    // #DCEAF6
 inline constexpr Color eva_unit00_focus_blue{ 195, 220, 239, 255 };    // #C3DCEF
 inline constexpr Color eva_unit00_pale_blue{ 175, 200, 222, 255 };     // #AFC8DE
@@ -146,6 +161,7 @@ inline constexpr Color eva_unit00_signal_amber = eva_unit00_warning_yellow; // #
 inline constexpr Color eva_unit00_graphite = eva_unit00_soft_graphite; // #687484
 
 inline constexpr Color eva_unit01_deep_purple{ 49, 33, 76, 255 };      // #31214C
+inline constexpr Color eva_unit01_button_idle{ 66, 48, 94, 255 };    // #42305E
 inline constexpr Color eva_unit01_royal_purple{ 95, 62, 132, 255 };    // #5F3E84
 inline constexpr Color eva_unit01_toxic_green{ 126, 222, 76, 255 };    // #7EDE4C
 inline constexpr Color eva_unit01_lime_glow{ 176, 255, 92, 255 };      // #B0FF5C
@@ -157,6 +173,7 @@ inline constexpr Color eva_unit01_alert_amber{ 246, 179, 92, 255 };    // #F6B35
 inline constexpr Color eva_unit01_burnt_orange{ 208, 124, 52, 255 };   // #D07C34
 
 inline constexpr Color eva_unit02_crimson{ 176, 38, 48, 255 };         // #B02630
+inline constexpr Color eva_unit02_button_idle{ 133, 43, 53, 255 };    // #852B35
 inline constexpr Color eva_unit02_vermilion{ 214, 72, 48, 255 };       // #D64830
 inline constexpr Color eva_unit02_orange{ 237, 142, 46, 255 };         // #ED8E2E
 inline constexpr Color eva_unit02_sun_yellow{ 246, 196, 74, 255 };     // #F6C44A
@@ -178,6 +195,8 @@ inline constexpr Color quiet_slate_silver{ 179, 188, 198, 255 };       // #B3BCC
 inline constexpr Color quiet_slate_gray{ 110, 122, 136, 255 };         // #6E7A88
 inline constexpr Color quiet_slate_steel{ 64, 75, 88, 255 };           // #404B58
 inline constexpr Color quiet_slate_charcoal{ 54, 63, 74, 255 };        // #363F4A
+inline constexpr Color quiet_slate_button_idle{ 66, 77, 90, 255 };    // #424D5A
+inline constexpr Color quiet_slate_button_focus{ 86, 100, 117, 255 }; // #566475
 inline constexpr Color quiet_slate_ink{ 32, 38, 46, 255 };             // #20262E
 inline constexpr Color quiet_slate_danger{ 127, 63, 70, 255 };         // #7F3F46
 inline constexpr Color quiet_slate_danger_focus{ 152, 74, 83, 255 };   // #984A53

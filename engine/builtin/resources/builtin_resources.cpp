@@ -1,34 +1,30 @@
 #include "builtin_resources.h"
+#include "../audio/builtin_music_player.h"
 
 namespace elysia::builtin
 {
-BuiltinResources::~BuiltinResources()
-{
-    shutdown();
-}
+// The cache handles its own destruction. Do not access another singleton here:
+// the player may already have been destroyed during process teardown.
+BuiltinResources::~BuiltinResources() = default;
 
 std::expected<void, std::string> BuiltinResources::initialize(
     SDL_Renderer* renderer,
     const BuiltinAssetCatalog& catalog,
-    std::span<const int> point_sizes,
-    const elysia::audio::AudioSettings& audio_settings)
+    std::span<const int> point_sizes)
 {
-    auto result = _assets.initialize(renderer, catalog, point_sizes);
-    if (!result)
-        return result;
-    _audio.bind(_assets, audio_settings);
-    return {};
+    BuiltinMusicPlayer::instance()->stop();
+    return _assets.initialize(renderer, catalog, point_sizes);
 }
 
 void BuiltinResources::shutdown() noexcept
 {
-    _audio.unbind();
+    BuiltinMusicPlayer::instance()->stop();
     _assets.shutdown();
 }
 
 bool BuiltinResources::is_initialized() const noexcept
 {
-    return _assets.is_initialized() && _audio.bound();
+    return _assets.is_initialized();
 }
 
 SDL_Texture* BuiltinResources::find_texture(BuiltinTextureId id) const noexcept
@@ -67,41 +63,6 @@ std::unique_ptr<elysia::animation::Animation> BuiltinResources::create_animation
     BuiltinAnimationId id) const
 {
     return _assets.create_animation(id);
-}
-
-int BuiltinResources::play_sound(BuiltinSoundId id,int loops) const
-{
-    return _audio.play_sound(id, loops);
-}
-
-bool BuiltinResources::play_music(BuiltinMusicId id,int loops) const
-{
-    return _audio.play_music(id, loops);
-}
-
-void BuiltinResources::stop_music() const noexcept
-{
-    _audio.stop_music();
-}
-
-void BuiltinResources::set_master_volume(int volume) noexcept
-{
-    _audio.set_master_volume(volume);
-}
-
-void BuiltinResources::set_music_volume(int volume) noexcept
-{
-    _audio.set_music_volume(volume);
-}
-
-void BuiltinResources::set_sound_volume(int volume) noexcept
-{
-    _audio.set_sound_volume(volume);
-}
-
-const elysia::audio::AudioSettings& BuiltinResources::audio_settings() const noexcept
-{
-    return _audio.settings();
 }
 
 std::size_t BuiltinResources::texture_count() const noexcept { return _assets.texture_count(); }

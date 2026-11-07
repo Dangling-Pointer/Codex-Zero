@@ -22,7 +22,7 @@ public:
     void render(SDL_Renderer& renderer) override;
     void shutdown() noexcept override;
 
-    [[nodiscard]] elysia::input::DevelopmentInputCapture
+    [[nodiscard]] elysia::input::InputCapture
         captured_input() const noexcept override;
 
     [[nodiscard]] DevelopmentPanelHandle register_panel(
@@ -55,8 +55,8 @@ private:
     std::vector<PanelEntry> _panels;
     std::vector<PendingOperation> _pending_operations;
     std::uint64_t _next_panel_handle = 1;
-    elysia::input::DevelopmentInputCapture _captured_input =
-        elysia::input::DevelopmentInputCapture::None;
+    elysia::input::InputCapture _captured_input =
+        elysia::input::InputCapture::None;
     bool _sdl_platform_initialized = false;
     bool _sdl_renderer_initialized = false;
     bool _frame_started = false;

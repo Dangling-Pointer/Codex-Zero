@@ -8,7 +8,7 @@ struct UiBinding
     elysia::input::RawInputControl control;
 };
 
-constexpr UiBinding k_ui_bindings[] = {
+constexpr UiBinding kUiBindings[] = {
     { elysia::ui::UiAction::NavigateLeft, elysia::input::RawInputControl::KeyLeft },
     { elysia::ui::UiAction::NavigateRight, elysia::input::RawInputControl::KeyRight },
     { elysia::ui::UiAction::NavigateUp, elysia::input::RawInputControl::KeyUp },
@@ -182,7 +182,7 @@ void UiInputRouter::reset_transient_state()
 
 bool UiInputRouter::is_action_pressed(const elysia::input::RawInputState& state, UiAction action) const
 {
-    for (const UiBinding& binding : k_ui_bindings)
+    for (const UiBinding& binding : kUiBindings)
     {
         if (binding.action == action && state.is_pressed(binding.control))
         {
@@ -195,7 +195,7 @@ bool UiInputRouter::is_action_pressed(const elysia::input::RawInputState& state,
 
 bool UiInputRouter::is_action_just_pressed(const elysia::input::RawInputState& state, UiAction action) const
 {
-    for (const UiBinding& binding : k_ui_bindings)
+    for (const UiBinding& binding : kUiBindings)
     {
         if (binding.action == action && state.is_just_pressed(binding.control))
         {
@@ -208,7 +208,7 @@ bool UiInputRouter::is_action_just_pressed(const elysia::input::RawInputState& s
 
 bool UiInputRouter::is_action_just_released(const elysia::input::RawInputState& state, UiAction action) const
 {
-    for (const UiBinding& binding : k_ui_bindings)
+    for (const UiBinding& binding : kUiBindings)
     {
         if (binding.action == action && state.is_just_released(binding.control))
         {
@@ -221,7 +221,7 @@ bool UiInputRouter::is_action_just_released(const elysia::input::RawInputState& 
 
 UiAction UiInputRouter::action_from_control(elysia::input::RawInputControl control) const
 {
-    for (const UiBinding& binding : k_ui_bindings)
+    for (const UiBinding& binding : kUiBindings)
     {
         if (binding.control == control)
         {

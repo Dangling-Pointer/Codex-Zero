@@ -72,9 +72,12 @@ enum class StartupLoadingAction
 class StartupLoadingCompletion
 {
 public:
-    void reset(bool wait_for_confirmation) noexcept
+    void reset(
+        bool wait_for_confirmation,
+        bool wait_for_logo_sequence) noexcept
     {
         _wait_for_confirmation = wait_for_confirmation;
+        _wait_for_logo_sequence = wait_for_logo_sequence;
         _loading_finished = false;
         _intro_finished = false;
         _waiting = false;
@@ -129,8 +132,8 @@ public:
 private:
     [[nodiscard]] StartupLoadingAction evaluate() noexcept
     {
-        if (_transitioning || _waiting
-            || !_loading_finished || !_intro_finished)
+        if (_transitioning || _waiting || !_loading_finished
+            || (_wait_for_logo_sequence && !_intro_finished))
         {
             return StartupLoadingAction::None;
         }
@@ -146,6 +149,7 @@ private:
     }
 
     bool _wait_for_confirmation = false;
+    bool _wait_for_logo_sequence = true;
     bool _loading_finished = false;
     bool _intro_finished = false;
     bool _waiting = false;

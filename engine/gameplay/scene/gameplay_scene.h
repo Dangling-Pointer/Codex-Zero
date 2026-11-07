@@ -1,64 +1,54 @@
 #pragma once
-
 #include "../../scene/scene.h"
 #include "../collision/gameplay_collision_runtime.h"
-#include "../input/gameplay_input_map.h"
-#include "../input/contracts/gameplay_input_event_receiver.h"
-#include "../input/contracts/gameplay_input_frame_receiver.h"
-
-#include <vector>
-
+#include "../control/controller_service.h"
 namespace elysia::gameplay
 {
+struct GameplaySceneFeatures
+{
+    elysia::scene::FixedStepConfig fixed_step{};
+    std::optional<elysia::physics::PhysicsWorldConfig> physics;
+    bool gameplay_collision = false;
+    std::optional<elysia::scene::CameraSceneConfig> camera;
+};
+
 class GameplayScene : public elysia::scene::Scene
 {
-public:
+  public:
     GameplayScene();
-    explicit GameplayScene(elysia::physics::PhysicsWorldConfig physics_config);
-
-    void on_input(
-        const elysia::input::RawInputFrame& input,
-        const std::vector<elysia::input::RawInputEvent>& events) override;
-
-protected:
-    void set_gameplay_input_enabled(bool enabled) noexcept;
-    [[nodiscard]] bool gameplay_input_enabled() const noexcept { return _gameplay_input_enabled; }
-    [[nodiscard]] elysia::input::InputActionMap& gameplay_input_map() noexcept { return _gameplay_input_map; }
-    [[nodiscard]] const elysia::input::InputActionMap& gameplay_input_map() const noexcept { return _gameplay_input_map; }
-    
-    //will be move down to engine next engine update
-    void on_scene_object_removing(elysia::core::SceneObject& object) override;
-    void on_scene_object_registered(elysia::core::SceneObject& object) override;
-    [[nodiscard]] collision::GameplayCollisionRuntime& collision_runtime() noexcept
+    explicit GameplayScene(GameplaySceneFeatures features);
+    ~GameplayScene() override;
+    SceneControlContext &control_context()
     {
-        return _collision_runtime;
+        return _control_context;
+    }
+    [[nodiscard]] bool has_collision_runtime() const noexcept
+    {
+        return static_cast<bool>(_collision_runtime);
     }
 
-private:
-    friend class elysia::scene::SceneManager;
-
-    [[nodiscard]] bool activate_collision_runtime() noexcept;
-    void deactivate_collision_runtime() noexcept;
-    struct FrameReceiverEntry
+  protected:
+    [[nodiscard]] collision::GameplayCollisionRuntime* try_collision_runtime() noexcept;
+    [[nodiscard]] collision::GameplayCollisionRuntime& collision_runtime();
+    virtual void on_game_fixed_update(
+        [[maybe_unused]] std::uint64_t tick, [[maybe_unused]] double delta)
     {
-        elysia::core::SceneObject* object = nullptr;
-        GameplayInputFrameReceiver* receiver = nullptr;
-    };
-
-    struct EventReceiverEntry
+    }
+    virtual void on_control_target_removing([[maybe_unused]] elysia::core::SceneObject &object)
     {
-        elysia::core::SceneObject* object = nullptr;
-        GameplayInputEventReceiver* receiver = nullptr;
-    };
+    }
 
-    void prune_receivers();
-    void dispatch_frame(const GameplayInputFrame& input);
-    void dispatch_events(const std::vector<elysia::input::ActionInputEvent>& events);
-
-    collision::GameplayCollisionRuntime _collision_runtime;
-    elysia::input::InputActionMap _gameplay_input_map;
-    std::vector<FrameReceiverEntry> _frame_receivers;
-    std::vector<EventReceiverEntry> _event_receivers;
-    bool _gameplay_input_enabled = true;
+  private:
+    friend class ControllerManager;
+    bool contains_control_target(const elysia::core::GameObject *) const;
+    void on_routed_input(const elysia::input::InputSnapshot &) final;
+    void on_fixed_update(std::uint64_t, double) final;
+    void on_pause_changed(bool) final;
+    void on_scene_object_removing(elysia::core::SceneObject &) final;
+    void on_runtime_attach() final;
+    void on_runtime_detach() final;
+    void on_runtime_reset() final;
+    std::unique_ptr<collision::GameplayCollisionRuntime> _collision_runtime;
+    SceneControlContext _control_context{*this};
 };
-}
+} // namespace elysia::gameplay

@@ -16,26 +16,14 @@ namespace
 constexpr elysia::core::Rect kDefaultWorldRect{0.0f, 0.0f, 96.0f, 96.0f};
 constexpr elysia::core::Rect kLocalColliderRect{24.0f, 16.0f, 48.0f, 72.0f};
 
-[[nodiscard]] bool is_pressed_event(
-    elysia::input::RawInputEventType type) noexcept
-{
-    return type == elysia::input::RawInputEventType::ControlPressed;
+
 }
 
-[[nodiscard]] bool is_movement_event(
-    elysia::input::RawInputEventType type) noexcept
-{
-    return type == elysia::input::RawInputEventType::ControlPressed
-        || type == elysia::input::RawInputEventType::ControlReleased;
-}
-}
-
-EngineCharacter::EngineCharacter()
-    : GameObject(elysia::core::DepthLayer::Character)
+EngineCharacter::EngineCharacter(elysia::input::InputActionId movement_action) : GameObject(elysia::core::DepthLayer::Character), _movement_action(std::move(movement_action))
 {
     set_world_rect(kDefaultWorldRect);
 
-    _collider.shape = elysia::physics::AabbShape{kLocalColliderRect};
+    _collider.shape = elysia::physics::BoxShape::from_rect(kLocalColliderRect);
     _collider.filter.category = 0;
     _collider.filter.mask = 0;
     _collider.response = elysia::physics::CollisionResponse::Ignore;
@@ -51,77 +39,24 @@ EngineCharacter::EngineCharacter()
 
 void EngineCharacter::update(double delta_seconds)
 {
-    const float horizontal =
-        (_move_right_d || _move_right_arrow ? 1.0f : 0.0f)
-        - (_move_left_a || _move_left_arrow ? 1.0f : 0.0f);
-    const float vertical =
-        (_move_down_s || _move_down_arrow ? 1.0f : 0.0f)
-        - (_move_up_w || _move_up_arrow ? 1.0f : 0.0f);
-
-    elysia::core::Vector2 direction{horizontal, vertical};
-    set_moving(!direction.is_zero());
-
-    if (horizontal < 0.0f)
-        _flip = elysia::core::SpriteFlip::None;
-    else if (horizontal > 0.0f)
-        _flip = elysia::core::SpriteFlip::Horizontal;
-
-    const double character_delta = scaled_delta(delta_seconds);
-    const double safe_delta = std::isfinite(character_delta)
-        && character_delta > 0.0
-        ? character_delta
-        : 0.0;
-
-    if (_is_moving && safe_delta > 0.0)
-    {
-        direction.normalize_in_place();
-        set_position(position()
-            + direction * (kMovementSpeed * static_cast<float>(safe_delta)));
-        clamp_to_movement_bounds();
-    }
-
-    elysia::animation::Animation* active_animation =
-        _is_moving ? _move.get() : _idle.get();
-    if (active_animation)
-        active_animation->update(safe_delta);
+    const double delta = scaled_delta(delta_seconds);
+    if (auto *animation = _is_moving ? _move.get() : _idle.get())
+        animation->update(std::isfinite(delta) && delta > 0 ? delta : 0);
 }
-
-bool EngineCharacter::on_raw_input_event(
-    const elysia::input::RawInputEvent& event)
+void EngineCharacter::on_control_command(const elysia::gameplay::ControlCommand &command, double delta)
 {
-    if (!is_movement_event(event.type))
-        return false;
-
-    const bool pressed = is_pressed_event(event.type);
-    switch (event.control)
-    {
-    case elysia::input::RawInputControl::KeyA:
-        _move_left_a = pressed;
-        return true;
-    case elysia::input::RawInputControl::KeyLeft:
-        _move_left_arrow = pressed;
-        return true;
-    case elysia::input::RawInputControl::KeyD:
-        _move_right_d = pressed;
-        return true;
-    case elysia::input::RawInputControl::KeyRight:
-        _move_right_arrow = pressed;
-        return true;
-    case elysia::input::RawInputControl::KeyW:
-        _move_up_w = pressed;
-        return true;
-    case elysia::input::RawInputControl::KeyUp:
-        _move_up_arrow = pressed;
-        return true;
-    case elysia::input::RawInputControl::KeyS:
-        _move_down_s = pressed;
-        return true;
-    case elysia::input::RawInputControl::KeyDown:
-        _move_down_arrow = pressed;
-        return true;
-    default:
-        return false;
-    }
+    auto direction = command.state.axis2d(_movement_action);
+    if (direction.length_squared() > 1)
+        direction.normalize_in_place();
+    set_moving(!direction.is_zero());
+    if (direction.x < 0)
+        _flip = elysia::core::SpriteFlip::None;
+    else if (direction.x > 0)
+        _flip = elysia::core::SpriteFlip::Horizontal;
+    const auto scaled = scaled_delta(delta);
+    if (std::isfinite(scaled) && scaled > 0)
+        set_position(position() + direction * (kMovementSpeed * static_cast<float>(scaled)));
+    clamp_to_movement_bounds();
 }
 
 void EngineCharacter::submit_render_commands(
@@ -183,14 +118,6 @@ EngineCharacter::movement_bounds() const noexcept
 
 void EngineCharacter::clear_movement_input() noexcept
 {
-    _move_left_a = false;
-    _move_left_arrow = false;
-    _move_right_d = false;
-    _move_right_arrow = false;
-    _move_up_w = false;
-    _move_up_arrow = false;
-    _move_down_s = false;
-    _move_down_arrow = false;
     set_moving(false);
 }
 
@@ -199,14 +126,14 @@ void EngineCharacter::submit_debug_draw() const
     if (!_collider.enabled)
         return;
 
-    const auto* aabb = std::get_if<elysia::physics::AabbShape>(
+    const auto* aabb = std::get_if<elysia::physics::BoxShape>(
         &_collider.shape);
     if (!aabb)
         return;
 
     elysia::tools::DebugDraw::instance()->draw_rect(
         elysia::tools::DebugDrawCategory::PhysicsCollider,
-        aabb->local_rect.translated(position()),
+        aabb->local_bounds().translated(position()),
         elysia::core::colors::green_500,
         2.0f);
 }
