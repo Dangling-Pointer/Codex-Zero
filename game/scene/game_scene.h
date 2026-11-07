@@ -2,11 +2,12 @@
 #include "../../engine/gameplay/scene/gameplay_scene.h"
 #include "../combat/wand/wand.h"
 #include "../combat/projectile_manager.h"
+#include "../enemy_generation/enemy_generator.h"
+#include "../enemy_generation/enemy_spawn_layout.h"
 #include <optional>
 #include "game/combat/combat_system.h"
 
 class PlayerCharacter;
-class Enemy;
 class DungeonRoom;
 
 class GameScene : public elysia::gameplay::GameplayScene
@@ -38,7 +39,6 @@ private:
 
 private:
 	PlayerCharacter *_player = nullptr;
-	Enemy *_enemy = nullptr;
 	DungeonRoom *_room = nullptr;
 
 	// tmp
@@ -46,4 +46,6 @@ private:
 	Wand _test_wand;
 	ProjectileManager _projectiles;
     CombatSystem _combat{collision_runtime()};
+	EnemyGenerator _enemy_generator;
+	EnemySpawnLayout _enemy_spawn_layout;
 };
