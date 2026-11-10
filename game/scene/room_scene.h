@@ -8,6 +8,7 @@
 #include "game/combat/wand/wand.h"
 
 class PlayerCharacter;
+class Portal;
 
 // Observers of scene-owned objects; ownership stays with Scene.
 struct RoomBuildResult
@@ -26,6 +27,7 @@ public:
     void on_exit() final;
     void on_reset() final;
     void on_before_update(double delta) final;
+    void on_after_update(double delta) final;
     [[nodiscard]] std::optional<CharacterContext> capture_character_context() const;
 
 protected:
@@ -34,6 +36,7 @@ protected:
     virtual RoomBuildResult build_room(const RoomBuildConfig& config) = 0;
     virtual void create_room_content() {}
     [[nodiscard]] PlayerCharacter* player() const noexcept { return _player; }
+    [[nodiscard]] Portal* portal() const noexcept { return _portal; }
     [[nodiscard]] const RoomBuildConfig& room_config() const noexcept { return _config; }
     [[nodiscard]] CombatSystem& combat_system() noexcept { return _combat; }
     [[nodiscard]] std::optional<elysia::camera::CameraFocus> resolve_camera_focus(elysia::camera::CameraSlot slot) const override;
@@ -43,8 +46,12 @@ protected:
 private:
     static void validate_payload(const RoomScenePayload& payload);
     void clear_room() noexcept;
+
+private:
+    bool _next_room_avalable = false;
     elysia::gameplay::ControllerHandle _player_controller;
     PlayerCharacter* _player = nullptr;
+    Portal* _portal = nullptr;
     RoomBuildResult _room;
     RoomBuildConfig _config;
     bool _active = false;

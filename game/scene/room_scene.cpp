@@ -4,6 +4,9 @@
 #include "scene_keys.h"
 
 #include "game/characters/player_character.h"
+#include "game/map/room_placement.h"
+#include "game/objcets/portal.h"
+#include "engine/tools/logger.h"
 #include "game/combat/projectile_service.h"
 #include "game/combat/projectiles/bullet.h"
 
@@ -55,6 +58,15 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
             || !physics_world().set_tile_world(*_room.collision_world))
             throw std::runtime_error("Cannot build room collision world");
 
+        const auto portal_bounds = game::central_portal_bounds(*_room.map);
+        const elysia::core::Rect player_bounds{_room.player_spawn, game::kPlayerSpawnSize};
+        if (!game::walkable_bounds(*_room.collision_world, portal_bounds)
+            || !game::walkable_bounds(*_room.collision_world, player_bounds)
+            || portal_bounds.intersects(player_bounds))
+            throw std::runtime_error("Room requires a walkable central portal and separate player spawn");
+        _portal = create_and_add_object<Portal>(portal_bounds);
+        _portal->set_on_reached([] { ELYSIA_LOG_INFO("gameplay", "Room portal reached"); });
+
         _player = create_and_add_object<PlayerCharacter>(_room.player_spawn, incoming->character);
         if (!_player || _player->is_destroyed())
             throw std::runtime_error("Cannot create room player");
@@ -91,6 +103,7 @@ void RoomScene::clear_room() noexcept
             return true;
         });
     _player = nullptr;
+    _portal = nullptr;
     _room = {};
     _config = {};
     resume();
@@ -100,6 +113,13 @@ void RoomScene::on_before_update(double delta)
 {
     if (_active && !_paused)
         _projectiles.update(delta);
+}
+
+void RoomScene::on_after_update(double)
+{
+    if (_active && _room.map && !_room.map->is_destroyed() && !is_paused() && _portal && _player
+        && !_player->is_destroyed() && _player->is_active() && !_player->is_dead())
+        _portal->check_reached(_player->world_rect());
 }
 
 std::optional<CharacterContext> RoomScene::capture_character_context() const
@@ -140,6 +160,7 @@ void RoomScene::on_control_target_removing(elysia::core::SceneObject& object)
     _combat.remove(object);
 
     if (&object == _player) _player = nullptr;
+    if (&object == _portal) _portal = nullptr;
     if (&object == _room.map)
     {
         if (_room.collision_world)
