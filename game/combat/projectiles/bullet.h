@@ -1,6 +1,7 @@
 #pragma once
 
 #include "projectile.h"
+#include "game/combat/actor_id.h"
 #include "bullet_types.h"
 #include "bullet_behavior/bullet_behavior_set.h"
 
@@ -13,6 +14,8 @@ public:
     explicit Bullet(const Bullet_Attributes &bullet_attributes) noexcept;
 
     void initialize_fire();
+    // Independent carrier ID for hit-box cleanup; no ActorCollisionRig is registered.
+    [[nodiscard]] elysia::gameplay::collision::ActorId collision_owner() const { return _collision_owner; }
 
     // Identifies this specific attack for hit tracking and deduplication
     [[nodiscard]] elysia::gameplay::collision::AttackInstanceId attack_instance() const { return _attack_instance; }
@@ -35,6 +38,7 @@ public:
     BulletBehaviorSet *behavior_set() { return &_behaviors; }
 
 private:
+    const elysia::gameplay::collision::ActorId _collision_owner = game::allocate_actor_id();
     bool _fired = false;
     elysia::gameplay::collision::AttackInstanceId _attack_instance;
     elysia::gameplay::collision::ActorId _instigator = 0;

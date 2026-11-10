@@ -24,13 +24,9 @@ public:
     MainMenuScene() = default;
     ~MainMenuScene() override = default;
 
-    void on_update(double delta) override;
-    void on_render(SDL_Renderer *renderer) override;
-    void on_input(const elysia::input::RawInputFrame &input, const std::vector<elysia::input::RawInputEvent> &events) override;
-
     void on_enter(const elysia::scene::ScenePayload &payload) override;
     void on_exit() override;
-    void reset() override;
+    void on_reset() override;
 
 private:
     void build_menu_buttons();

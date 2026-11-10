@@ -26,6 +26,8 @@ public:
             game::collision::categories::PlayerAttack) noexcept;
 
     ~Projectile() override;
+    // Called by the owning scene before PhysicsParticipant is unbound.
+    void detach_collision_listener() noexcept;
 
     void update(double delta_seconds) override;
     void fixed_update(double fixed_delta_seconds) override;

@@ -1,24 +1,15 @@
 #include "character.h"
 
-#include <atomic>
+#include "game/combat/actor_id.h"
 #include <cmath>
 #include <stdexcept>
-
-namespace
-{
-elysia::gameplay::collision::ActorId allocate_actor_id() noexcept
-{
-    static std::atomic<elysia::gameplay::collision::ActorId> next_id{1};
-    return next_id.fetch_add(1, std::memory_order_relaxed);
-}
-}
 
 Character::Character(elysia::core::Vector2 start_position, elysia::core::Vector2 render_size,
                      elysia::core::Rect collision_rect, float move_speed,
                      elysia::gameplay::collision::TeamId team, float max_health,
                      std::vector<elysia::core::Rect> hurt_boxes)
     : GameObject(elysia::core::DepthLayer::Character),
-      _actor_id(allocate_actor_id()), _move_speed(move_speed), _team(team)
+      _actor_id(game::allocate_actor_id()), _move_speed(move_speed), _team(team)
 {
     if (!std::isfinite(max_health) || max_health <= 0)
         throw std::invalid_argument("Character health must be finite and positive");
@@ -26,7 +17,7 @@ Character::Character(elysia::core::Vector2 start_position, elysia::core::Vector2
     set_world_rect({start_position, render_size});
     using namespace game::collision::categories;
     elysia::physics::Collider body;
-    body.shape = elysia::physics::AabbShape{collision_rect};
+    body.shape = elysia::physics::BoxShape::from_rect(collision_rect);
     body.filter.category = team == elysia::gameplay::collision::teams::Enemy ? Enemy : Player;
     body.filter.mask = World | Player | Enemy;
     body.material.friction = 0;
@@ -36,7 +27,7 @@ Character::Character(elysia::core::Vector2 start_position, elysia::core::Vector2
     for (auto rect : hurt_boxes)
     {
         elysia::physics::Collider hurt;
-        hurt.shape = elysia::physics::AabbShape{rect};
+        hurt.shape = elysia::physics::BoxShape::from_rect(rect);
         const bool enemy = team == elysia::gameplay::collision::teams::Enemy;
         hurt.filter.category = enemy ? EnemyHurt : PlayerHurt;
         hurt.filter.mask = (enemy ? PlayerAttack : EnemyAttack) | NeutralAttack;
@@ -107,4 +98,12 @@ elysia::gameplay::collision::ActorCollisionRig Character::collision_rig() const
     for (std::size_t i = 1; i < _colliders.size(); ++i)
         rig.hurt_boxes.push_back(physics_collider(i));
     return rig;
+}
+
+void Character::restore_state(float health, float move_speed)
+{
+    _move_speed = move_speed;
+    _health = health;
+    if (health == 0)
+        (void)receive_attack({0, 0, 0});
 }

@@ -46,6 +46,7 @@ public:
 	[[nodiscard]] std::expected<void,ResourceFailure> store_music(
 		const std::string& key,MIX_Audio* music);
 	MIX_Audio* find_music(const std::string_view& key) const;
+    [[nodiscard]] bool has_music(std::string_view key) const;
 
 	void clear() override;
 	size_t resource_count() const override;

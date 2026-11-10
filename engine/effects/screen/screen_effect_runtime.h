@@ -1,10 +1,12 @@
 #pragma once
 
+#include "../effect_request_failure.h"
 #include "screen_effect_types.h"
 #include "../../core/render/render_command.h"
 #include "../../core/render/render_failure.h"
 #include "../../animation/animation.h"
 #include "../../animation/animation_types.h"
+#include <expected>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -16,11 +18,11 @@ class ScreenEffectRuntime
 {
 public:
     static bool valid(const ScreenEffectPlayback& playback) noexcept;
-    std::optional<ScreenEffectHandle> create(const ScreenColorEffectRequest& request, const void* scene,
+    std::expected<ScreenEffectHandle, EffectRequestFailure> create(const ScreenColorEffectRequest& request, const void* scene,
         std::optional<std::size_t> frame = {});
-    std::optional<ScreenEffectHandle> create(const ScreenImageEffectRequest& request, SDL_Texture* texture, const void* scene,
+    std::expected<ScreenEffectHandle, EffectRequestFailure> create(const ScreenImageEffectRequest& request, SDL_Texture* texture, const void* scene,
         std::optional<std::size_t> frame = {});
-    std::optional<ScreenEffectHandle> create(const ScreenAnimationEffectRequest& request,
+    std::expected<ScreenEffectHandle, EffectRequestFailure> create(const ScreenAnimationEffectRequest& request,
         std::unique_ptr<elysia::animation::Animation> animation,
         const elysia::animation::AnimationDefinition& definition,
         elysia::core::Vector2 natural_size, double angle, const void* scene,

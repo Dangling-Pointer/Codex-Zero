@@ -10,9 +10,6 @@
 #include <vector>
 #include "game/combat/damage_receiver.h"
 #include "engine/gameplay/collision/actor_collision_rig.h"
-//TODO:
-//// Replace direct input handling with controller-based input
-//// Fix character damping
 
 class Character : public elysia::core::GameObject,
                   public elysia::physics::PhysicsParticipant,
@@ -44,6 +41,7 @@ protected:
               elysia::core::Rect collision_rect, float move_speed,
               elysia::gameplay::collision::TeamId team, float max_health = 100.0f,
               std::vector<elysia::core::Rect> hurt_boxes = {});
+    void restore_state(float health, float move_speed);
     virtual void on_death() noexcept {}
     void set_move_direction(elysia::core::Vector2 direction) noexcept;
 

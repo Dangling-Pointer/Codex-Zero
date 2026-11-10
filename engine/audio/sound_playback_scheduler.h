@@ -1,8 +1,6 @@
 #pragma once
-
 #include "sound_playback_types.h"
 #include "audio_fade.h"
-
 #include <array>
 #include <functional>
 #include <string>
@@ -15,64 +13,51 @@ namespace elysia::audio
 class SoundPlaybackScheduler
 {
 public:
-    // The final argument is the initial gain, applied before playback begins.
-    using StartSoundCallback = std::function<int(std::string_view,int,SoundGroup,double)>;
-    using ChannelPlayingCallback = std::function<bool(int)>;
-    using StopSoundCallback = std::function<void(int)>;
-    using ActiveChannelCallback = std::function<void(int,double)>;
-    using VolumeCallback = std::function<void(int,SoundGroup,double)>;
+    using StartSoundCallback=std::function<AudioResult<int>(std::string_view,int,SoundGroup,double)>;
+    using ChannelPlayingCallback=std::function<bool(int)>;
+    using StopSoundCallback=std::function<AudioResult<void>(int)>;
+    using ActiveChannelCallback=std::function<void(int,double)>;
+    using VolumeCallback=std::function<AudioResult<void>(int,SoundGroup,double)>;
+    using PauseCallback=std::function<AudioResult<void>(int,bool)>;
+    using FailureCallback=std::function<void(const AudioFailure&,SoundHandle)>;
 
-    [[nodiscard]] bool set_group_config(SoundGroup group,const SoundGroupConfig& config);
-    [[nodiscard]] const SoundGroupConfig& group_config(SoundGroup group) const;
-
-    [[nodiscard]] SoundRequestResult request_sound(std::string_view key,const SoundPlayOptions& options,
-        const StartSoundCallback& start_sound,const ChannelPlayingCallback& is_channel_playing,const StopSoundCallback& stop_sound = {});
-
-    void update(double delta_seconds,const StartSoundCallback& start_sound,
-        const ChannelPlayingCallback& is_channel_playing,const StopSoundCallback& stop_sound = {},const VolumeCallback& volume = {});
-
-    [[nodiscard]] bool stop_sound(SoundHandle handle,const ChannelPlayingCallback& is_channel_playing,const StopSoundCallback& stop_sound,std::chrono::milliseconds fade_out = {});
-    void stop_all_sounds(const ChannelPlayingCallback& playing,const StopSoundCallback& stop,std::chrono::milliseconds fade_out = {});
+    AudioResult<void> set_group_config(SoundGroup group,const SoundGroupConfig& config);
+    AudioResult<SoundGroupConfig> group_config(SoundGroup group) const;
+    AudioResult<SoundRequestResult> request_sound(std::string_view key,const SoundPlayOptions& options,
+        const StartSoundCallback& start,const ChannelPlayingCallback& playing,const StopSoundCallback& stop={});
+    void update(double delta,const StartSoundCallback& start,const ChannelPlayingCallback& playing,
+        const StopSoundCallback& stop={},const VolumeCallback& volume={},const FailureCallback& failed={});
+    AudioResult<void> stop_sound(SoundHandle handle,const ChannelPlayingCallback& playing,
+        const StopSoundCallback& stop,std::chrono::milliseconds fade_out={});
+    AudioResult<void> stop_all_sounds(const ChannelPlayingCallback& playing,const StopSoundCallback& stop,
+        std::chrono::milliseconds fade_out={});
     void cancel_all_scheduled_sounds();
-    bool set_gain(SoundHandle handle,double gain,const ChannelPlayingCallback& playing,const VolumeCallback& volume);
-    bool set_paused(SoundHandle handle,bool paused,const ChannelPlayingCallback& playing,const std::function<bool(int,bool)>& pause);
-    [[nodiscard]] bool is_active(SoundHandle handle,const ChannelPlayingCallback& playing);
+    AudioResult<void> set_gain(SoundHandle handle,double gain,const ChannelPlayingCallback& playing,const VolumeCallback& volume);
+    AudioResult<void> set_paused(SoundHandle handle,bool paused,const ChannelPlayingCallback& playing,const PauseCallback& pause);
+    bool is_active(SoundHandle handle,const ChannelPlayingCallback& playing);
     void clear_active_sounds();
-    void for_each_active_channel(SoundGroup group,const ChannelPlayingCallback& is_channel_playing,const ActiveChannelCallback& callback);
+    void for_each_active_channel(SoundGroup group,const ChannelPlayingCallback& playing,const ActiveChannelCallback& callback);
     void reset();
-
 private:
     struct ActiveSound
     {
-        SoundHandle handle = 0;
-        int channel = -1;
-        SoundGroup group = SoundGroup::Extra;
-        AudioFade fade;
-        bool stopping = false;
-        double gain = 1.0;
-        bool paused = false;
+        SoundHandle handle=0; int channel=-1; SoundGroup group=SoundGroup::Extra;
+        AudioFade fade; bool stopping=false; double gain=1; bool paused=false;
+        std::optional<AudioError> reported_error;
     };
-
     struct PendingSound
     {
-        SoundHandle handle = 0;
-        std::string key;
-        SoundPlayOptions options{};
-        double due_time_seconds = 0.0;
-        bool paused = false;
+        SoundHandle handle=0; std::string key; SoundPlayOptions options;
+        double due_time_seconds=0; bool paused=false;
     };
-
-    [[nodiscard]] bool try_start_sound(SoundHandle handle,std::string_view key,
-        const SoundPlayOptions& options,const StartSoundCallback& start_sound,
-        const ChannelPlayingCallback& is_channel_playing,const StopSoundCallback& stop_sound);
-    void prune_finished_sounds(const ChannelPlayingCallback& is_channel_playing);
-    [[nodiscard]] std::size_t active_count(SoundGroup group) const;
-
-private:
+    AudioResult<void> try_start_sound(SoundHandle handle,std::string_view key,const SoundPlayOptions& options,
+        const StartSoundCallback& start,const ChannelPlayingCallback& playing,const StopSoundCallback& stop);
+    void prune_finished_sounds(const ChannelPlayingCallback& playing);
+    std::size_t active_count(SoundGroup group) const;
     std::array<SoundGroupConfig,kSoundGroupCount> _group_configs{};
     std::vector<ActiveSound> _active_sounds;
     std::vector<PendingSound> _pending_sounds;
     std::unordered_map<std::string,double> _last_started_seconds_by_key;
-    double _elapsed_seconds = 0.0;
+    double _elapsed_seconds=0;
 };
 }

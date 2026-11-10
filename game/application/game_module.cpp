@@ -36,6 +36,7 @@ elysia::application::ApplicationDescriptor GameModule::descriptor() const
                 .reload_mode = SceneReloadMode::Reuse},
             .failure_route = std::nullopt,
             .project_logo = elysia::builtin::StartupLogoSlot{.texture_key = "dangling_ptr"},
+            .wait_for_logo_sequence = false,
             .wait_for_confirmation = true},
         .reload_mode = SceneReloadMode::Reuse};
 
@@ -44,6 +45,9 @@ elysia::application::ApplicationDescriptor GameModule::descriptor() const
 
 void GameModule::register_scenes(elysia::scene::SceneManager &scene_manager) const
 {
+    auto* controllers = elysia::gameplay::ControllerService::instance();
+    if (!controllers->session_active() && !controllers->begin_session())
+        throw std::runtime_error("Cannot start game controller session");
     scene_manager.register_game_scene<MainMenuScene>(MainMenu);
     scene_manager.register_game_scene<GameScene>(Game);
     scene_manager.register_game_scene<CombatScene>(CombatRoom);

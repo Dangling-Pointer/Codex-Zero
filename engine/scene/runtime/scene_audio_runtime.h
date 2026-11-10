@@ -1,110 +1,63 @@
 #pragma once
-
 #include "scene_audio_config.h"
-#include "../../audio/sound_playback_types.h"
-#include "../../audio/sound_distance.h"
-#include "../../core/geometry/vector2.h"
-#include <optional>
-#include <string>
+#include "../../audio/scene_sound_types.h"
+#include <string_view>
 #include <vector>
 
 namespace elysia::scene
 {
-enum class SceneSoundPausePolicy { FollowScene, ContinueWhenPaused };
-
-struct LoopSoundId
-{
-    std::uint64_t value = 0;
-    friend bool operator==(const LoopSoundId&,const LoopSoundId&) = default;
-};
-
-struct LoopSoundRequest
-{
-    std::string key;
-    elysia::core::Vector2 position{};
-    elysia::audio::SoundDistanceConfig distance;
-    double gain = 1;
-    elysia::audio::SoundGroup group = elysia::audio::SoundGroup::Ambient;
-    bool enabled = true;
-    SceneSoundPausePolicy pause_policy = SceneSoundPausePolicy::FollowScene;
-};
-
-enum class LoopSoundStatus
-{
-    Playing, Disabled, ScenePaused, Inaudible, OutOfRange, WaitingForVoice, MissingResource
-};
-
-struct LoopSoundState
-{
-    LoopSoundStatus status = LoopSoundStatus::WaitingForVoice;
-    std::optional<elysia::audio::SoundHandle> voice;
-};
-
-// Scene owns this runtime. No GameObject or native audio pointer is retained.
+// Internal runtime owned by Scene; gameplay uses AudioService.
 class SceneAudioRuntime final
 {
 public:
-    explicit SceneAudioRuntime(SceneAudioConfig config = {});
+    explicit SceneAudioRuntime(SceneAudioConfig config={});
     ~SceneAudioRuntime();
-    SceneAudioRuntime(const SceneAudioRuntime&) = delete;
-    SceneAudioRuntime& operator=(const SceneAudioRuntime&) = delete;
-
-    bool set_listener_position(elysia::core::Vector2 position);
-    [[nodiscard]] elysia::core::Vector2 listener_position() const noexcept { return _listener; }
-    [[nodiscard]] elysia::audio::SoundRequestResult request_sound(std::string_view key,
-        const elysia::audio::SoundPlayOptions& options = {},
-        SceneSoundPausePolicy pause_policy = SceneSoundPausePolicy::FollowScene);
-    [[nodiscard]] elysia::audio::SoundRequestResult request_sound_at(std::string_view key,
-        elysia::core::Vector2 position,const elysia::audio::SoundDistanceConfig& distance,
-        const elysia::audio::SoundPlayOptions& options = {},
-        SceneSoundPausePolicy pause_policy = SceneSoundPausePolicy::FollowScene);
-    // Owned requests use these setters so distance/scene refresh preserves intent.
-    bool set_sound_gain(elysia::audio::SoundHandle handle,double gain);
-    bool set_sound_paused(elysia::audio::SoundHandle handle,bool paused);
-
-    [[nodiscard]] std::optional<LoopSoundId> create_loop(const LoopSoundRequest& request);
-    bool set_loop_position(LoopSoundId id,elysia::core::Vector2 position);
-    bool set_loop_gain(LoopSoundId id,double gain);
-    bool set_loop_enabled(LoopSoundId id,bool enabled);
-    bool destroy_loop(LoopSoundId id);
-    // Snapshot after the last update or setter. Queries never acquire a voice.
-    [[nodiscard]] std::optional<LoopSoundState> loop_state(LoopSoundId id) const;
-
-    void update(double delta_seconds);
+    SceneAudioRuntime(const SceneAudioRuntime&)=delete;
+    SceneAudioRuntime& operator=(const SceneAudioRuntime&)=delete;
+    elysia::audio::AudioResult<void> set_listener_position(elysia::core::Vector2 position);
+    elysia::core::Vector2 listener_position() const noexcept { return _listener; }
+    elysia::audio::AudioResult<elysia::audio::SoundRequestResult> request_sound(std::string_view key,const elysia::audio::SoundPlayOptions& options={});
+    elysia::audio::AudioResult<void> set_sound_gain(elysia::audio::SoundHandle handle,double gain);
+    elysia::audio::AudioResult<void> set_sound_paused(elysia::audio::SoundHandle handle,bool paused);
+    bool owns_sound(elysia::audio::SoundHandle handle) const noexcept;
+    elysia::audio::AudioResult<elysia::audio::LoopSoundId> create_loop(const elysia::audio::LoopSoundRequest& request);
+    elysia::audio::AudioResult<void> set_loop_position(elysia::audio::LoopSoundId id,elysia::core::Vector2 position);
+    elysia::audio::AudioResult<void> set_loop_gain(elysia::audio::LoopSoundId id,double gain);
+    elysia::audio::AudioResult<void> set_loop_enabled(elysia::audio::LoopSoundId id,bool enabled);
+    elysia::audio::AudioResult<void> destroy_loop(elysia::audio::LoopSoundId id);
+    elysia::audio::AudioResult<elysia::audio::LoopSoundState> loop_state(elysia::audio::LoopSoundId id) const;
+    void update(double delta);
     void set_paused(bool paused);
-    // Drops ownership and resets listener/retry clock, preserving scene pause.
+    elysia::audio::AudioResult<void> clear_sounds();
     void clear() noexcept;
-
 private:
     struct OwnedSound
     {
-        elysia::audio::SoundHandle handle = 0;
-        double gain = 1;
-        SceneSoundPausePolicy pause_policy = SceneSoundPausePolicy::FollowScene;
-        std::optional<elysia::core::Vector2> position;
-        elysia::audio::SoundDistanceConfig distance;
-        bool paused = false;
+        elysia::audio::SoundHandle handle=0;
+        double gain=1;
+        elysia::audio::SoundPausePolicy pause_policy=elysia::audio::SoundPausePolicy::FollowScene;
+        std::optional<elysia::audio::SpatialSoundConfig> spatial;
+        bool paused=false;
+        std::optional<elysia::audio::AudioError> reported_error;
     };
     struct Loop
     {
-        LoopSoundId id;
-        LoopSoundRequest request;
-        LoopSoundState state;
-        double next_attempt = 0;
-        bool warned_missing = false;
+        elysia::audio::LoopSoundId id;
+        elysia::audio::LoopSoundRequest request;
+        elysia::audio::LoopSoundState state;
+        double next_attempt=0;
     };
-    elysia::audio::SoundRequestResult request_owned(std::string_view key,
-        const elysia::audio::SoundPlayOptions& options,OwnedSound sound);
-    void refresh_sound(const OwnedSound& sound);
-    void refresh_loop(Loop& loop);
-    Loop* find_loop(LoopSoundId id);
+    elysia::audio::AudioResult<void> refresh_sound(const OwnedSound& sound);
+    elysia::audio::AudioResult<void> refresh_loop(Loop& loop,bool report=true);
+    elysia::audio::AudioResult<void> change_loop(Loop& loop,const elysia::audio::LoopSoundRequest& request);
+    void loop_failure(Loop& loop,const elysia::audio::AudioFailure& failure);
+    Loop* find_loop(elysia::audio::LoopSoundId id);
     double distance_to(elysia::core::Vector2 position) const noexcept;
-
     SceneAudioConfig _config;
     elysia::core::Vector2 _listener{};
     std::vector<OwnedSound> _sounds;
     std::vector<Loop> _loops;
-    double _elapsed = 0;
-    bool _paused = false;
+    double _elapsed=0;
+    bool _paused=false;
 };
 }

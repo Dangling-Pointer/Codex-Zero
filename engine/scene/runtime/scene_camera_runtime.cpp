@@ -25,6 +25,43 @@ SceneCameraRuntime::SceneCameraRuntime(CameraSceneConfig config)
         throw std::invalid_argument("Scene must own at least one camera slot.");
     if (!_config.owned_slots.contains(_config.initial_slot))
         throw std::invalid_argument("Scene must own its initial camera slot.");
+    if (_config.default_request_slot && !_config.owned_slots.contains(*_config.default_request_slot))
+        throw std::invalid_argument("Scene must own its default camera request slot.");
+}
+
+SceneCameraRuntime::~SceneCameraRuntime() { end_service_activity(); }
+
+void SceneCameraRuntime::finish_motion(std::size_t index, Status status) noexcept
+{
+    if (auto& operation = _motion_operations[index])
+    {
+        operation->status = status;
+        operation.reset();
+    }
+}
+
+void SceneCameraRuntime::finish_blend(Status status) noexcept
+{
+    if (_blend_operation)
+    {
+        _blend_operation->status = status;
+        _blend_operation.reset();
+    }
+}
+
+void SceneCameraRuntime::end_service_activity() noexcept
+{
+    finish_blend(Status::SceneEnded);
+    for (std::size_t i = 0; i < _motion_operations.size(); ++i)
+        finish_motion(i, Status::SceneEnded);
+    cancel_activity();
+}
+
+void SceneCameraRuntime::clear_owned_transient_effects() noexcept
+{
+    // Only the service's currently bound runtime may perform slot-wide cleanup.
+    // cancel_activity() and destruction remain safe for stale runtime instances.
+    elysia::camera::CameraManager::instance()->clear_transient_effects(_config.owned_slots);
 }
 
 const elysia::camera::Camera& SceneCameraRuntime::presented_camera() const noexcept
@@ -54,6 +91,7 @@ void SceneCameraRuntime::set_center(
 {
     validate_owned_slot(slot);
     elysia::camera::CameraManager::instance()->set_center(slot, center);
+    finish_motion(slot_index(slot), Status::Superseded);
     _motions[slot_index(slot)].reset();
 }
 
@@ -61,6 +99,7 @@ void SceneCameraRuntime::set_zoom(elysia::camera::CameraSlot slot, float zoom)
 {
     validate_owned_slot(slot);
     elysia::camera::CameraManager::instance()->set_zoom(slot, zoom);
+    finish_motion(slot_index(slot), Status::Superseded);
     _motions[slot_index(slot)].reset();
 }
 
@@ -94,24 +133,44 @@ void SceneCameraRuntime::request_shake(
     const elysia::camera::CameraShakeParams& params)
 {
     validate_owned_slot(slot);
-    elysia::camera::CameraManager::instance()->request_shake(slot, params);
+    _requests.push_back({RequestKind::Shake, slot, params});
 }
 
 void SceneCameraRuntime::snap_to_focus(elysia::camera::CameraSlot slot)
 {
     validate_owned_slot(slot);
-    elysia::camera::CameraManager::instance()->request_snap_to_focus(slot);
+    _requests.push_back({RequestKind::SnapToFocus, slot});
 }
 
 void SceneCameraRuntime::clear_effects(elysia::camera::CameraSlot slot)
 {
     validate_owned_slot(slot);
-    elysia::camera::CameraManager::instance()->request_clear_effects(slot);
+    _requests.push_back({RequestKind::ClearEffects, slot});
+}
+
+void SceneCameraRuntime::flush_requests()
+{
+    auto* manager = elysia::camera::CameraManager::instance();
+    for (const auto& request : _requests)
+    {
+        switch (request.kind)
+        {
+        case RequestKind::Shake: manager->request_shake(request.slot, request.shake); break;
+        case RequestKind::SnapToFocus:
+            manager->request_snap_to_focus(request.slot);
+            finish_motion(slot_index(request.slot), Status::Superseded);
+            _motions[slot_index(request.slot)].reset();
+            break;
+        case RequestKind::ClearEffects: manager->request_clear_effects(request.slot); break;
+        }
+    }
+    _requests.clear();
 }
 
 void SceneCameraRuntime::cut_to(elysia::camera::CameraSlot slot)
 {
     validate_owned_slot(slot);
+    finish_blend(Status::Superseded);
     _blend.reset();
     _presented_slot = slot;
 }
@@ -126,6 +185,7 @@ std::optional<elysia::camera::CameraBlendId> SceneCameraRuntime::blend_to(
         return std::nullopt;
 
     const elysia::camera::Camera source = presented_camera();
+    finish_blend(Status::Superseded);
     const elysia::camera::CameraBlendId id{_next_blend_id++};
     _blend = ActiveBlend{.id = id, .target = slot, .source = source, .spec = spec};
     _blended_camera = source;
@@ -147,6 +207,7 @@ bool SceneCameraRuntime::pause_blend(elysia::camera::CameraBlendId id) noexcept
     if (!_blend || _blend->id != id)
         return false;
     _blend->paused = true;
+    if (_blend_operation) _blend_operation->status = Status::Paused;
     return true;
 }
 
@@ -155,6 +216,7 @@ bool SceneCameraRuntime::resume_blend(elysia::camera::CameraBlendId id) noexcept
     if (!_blend || _blend->id != id)
         return false;
     _blend->paused = false;
+    if (_blend_operation) _blend_operation->status = Status::Playing;
     return true;
 }
 
@@ -162,6 +224,7 @@ bool SceneCameraRuntime::cancel_blend(elysia::camera::CameraBlendId id) noexcept
 {
     if (!_blend || _blend->id != id)
         return false;
+    finish_blend(Status::Cancelled);
     _blend.reset();
     return true;
 }
@@ -176,6 +239,7 @@ elysia::camera::CameraMotionId SceneCameraRuntime::move_to(
     validate_owned_slot(slot);
     const auto id = elysia::camera::CameraManager::instance()->move_camera_to(
         slot, target, duration_seconds, easing, end_behavior);
+    finish_motion(slot_index(slot), Status::Superseded);
     _motions[slot_index(slot)] = id;
     return id;
 }
@@ -186,6 +250,7 @@ elysia::camera::CameraMotionId SceneCameraRuntime::play_path(
 {
     validate_owned_slot(slot);
     const auto id = elysia::camera::CameraManager::instance()->play_camera_path(slot, motion);
+    finish_motion(slot_index(slot), Status::Superseded);
     _motions[slot_index(slot)] = id;
     return id;
 }
@@ -211,14 +276,33 @@ std::optional<elysia::camera::CameraMotionState> SceneCameraRuntime::motion_stat
 
 bool SceneCameraRuntime::pause_motion(elysia::camera::CameraMotionId id) noexcept
 {
-    return owned_motion_index(id)
-        && elysia::camera::CameraManager::instance()->pause_camera_motion(id);
+    const auto index = owned_motion_index(id);
+    if (!index) return false;
+    if (!elysia::camera::CameraManager::instance()->pause_camera_motion(id))
+    {
+        finish_motion(*index, Status::Superseded);
+        _motions[*index].reset();
+        return false;
+    }
+    if (_motion_operations[*index]) _motion_operations[*index]->status = Status::Paused;
+    return true;
 }
 
 bool SceneCameraRuntime::resume_motion(elysia::camera::CameraMotionId id) noexcept
 {
-    return owned_motion_index(id)
-        && elysia::camera::CameraManager::instance()->resume_camera_motion(id);
+    const auto index = owned_motion_index(id);
+    if (!index) return false;
+    auto* manager = elysia::camera::CameraManager::instance();
+    if (!manager->resume_camera_motion(id))
+    {
+        finish_motion(*index, Status::Superseded);
+        _motions[*index].reset();
+        return false;
+    }
+    if (_motion_operations[*index])
+        _motion_operations[*index]->status = manager->camera_motion_state(id) == elysia::camera::CameraMotionState::Holding
+            ? Status::Holding : Status::Playing;
+    return true;
 }
 
 bool SceneCameraRuntime::cancel_motion(elysia::camera::CameraMotionId id) noexcept
@@ -228,6 +312,7 @@ bool SceneCameraRuntime::cancel_motion(elysia::camera::CameraMotionId id) noexce
         return false;
     const bool cancelled =
         elysia::camera::CameraManager::instance()->cancel_camera_motion(id);
+    finish_motion(*index, cancelled ? Status::Cancelled : Status::Superseded);
     _motions[*index].reset();
     return cancelled;
 }
@@ -236,17 +321,34 @@ SceneCameraUpdateResult SceneCameraRuntime::advance(double delta_seconds)
 {
     SceneCameraUpdateResult result;
     auto* manager = elysia::camera::CameraManager::instance();
+    flush_requests();
     result.motions = manager->update(_config.owned_slots, delta_seconds);
     for (const auto& completion : result.motions)
     {
         const auto index = slot_index(completion.slot);
-        if (_motions[index] && *_motions[index] == completion.id
-            && !manager->camera_motion_state(completion.id))
-            _motions[index].reset();
+        if (_motions[index] && *_motions[index] == completion.id)
+        {
+            if (_motion_operations[index]) _motion_operations[index]->reached_target = true;
+            if (!manager->camera_motion_state(completion.id))
+            {
+                finish_motion(index, Status::Completed);
+                _motions[index].reset();
+            }
+        }
     }
-    for (auto& motion : _motions)
-        if (motion && !manager->camera_motion_state(*motion))
-            motion.reset();
+    for (std::size_t i = 0; i < _motions.size(); ++i)
+    {
+        if (!_motions[i]) continue;
+        const auto state = manager->camera_motion_state(*_motions[i]);
+        if (!state)
+        {
+            finish_motion(i, Status::Superseded);
+            _motions[i].reset();
+        }
+        else if (_motion_operations[i])
+            _motion_operations[i]->status = *state == elysia::camera::CameraMotionState::Paused ? Status::Paused
+                : *state == elysia::camera::CameraMotionState::Holding ? Status::Holding : Status::Playing;
+    }
 
     if (_blend && !_blend->paused)
     {
@@ -267,6 +369,8 @@ SceneCameraUpdateResult SceneCameraRuntime::advance(double delta_seconds)
         {
             result.blend = CameraBlendCompletion{blend.id, blend.target};
             _presented_slot = blend.target;
+            if (_blend_operation) _blend_operation->reached_target = true;
+            finish_blend(Status::Completed);
             _blend.reset();
         }
     }
@@ -302,7 +406,11 @@ void SceneCameraRuntime::advance(
 
 void SceneCameraRuntime::cancel_activity() noexcept
 {
+    _requests.clear();
+    finish_blend(Status::Cancelled);
     _blend.reset();
+    for (std::size_t i = 0; i < _motion_operations.size(); ++i)
+        finish_motion(i, Status::Cancelled);
     for (auto& motion : _motions)
     {
         if (motion)

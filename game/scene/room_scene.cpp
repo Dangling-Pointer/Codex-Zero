@@ -1,4 +1,7 @@
 #include "room_scene.h"
+#include "gameplay_setup.h"
+#include "game/combat/player_fire.h"
+#include "scene_keys.h"
 
 #include "game/characters/player_character.h"
 #include "game/combat/projectile_service.h"
@@ -28,6 +31,8 @@ void RoomScene::validate_payload(const RoomScenePayload& payload)
         throw std::invalid_argument("Invalid room map configuration");
 }
 
+RoomScene::RoomScene() : GameplayScene(game::room_features()) {}
+
 void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
 {
     const auto* incoming = elysia::scene::try_scene_payload<RoomScenePayload>(payload);
@@ -38,7 +43,7 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
         return;
 
     _config = incoming->room;
-    _paused = false;
+    resume();
     try
     {
         _projectiles.bind_scene(*this, physics_world());
@@ -53,12 +58,12 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
         _player = create_and_add_object<PlayerCharacter>(_room.player_spawn, incoming->character);
         if (!_player || _player->is_destroyed())
             throw std::runtime_error("Cannot create room player");
+        _player_controller = game::bind_player(control_context(), *_player);
         create_room_content();
         constexpr auto slot = elysia::camera::CameraSlot::Main;
-        auto* camera = elysia::camera::CameraManager::instance();
-        camera->set_follow_strategy(slot, std::make_unique<elysia::camera::HardFollowStrategy>());
-        camera->set_zoom(slot, 2.0f);
-        camera->set_center(slot, _player->center());
+        camera_runtime().set_follow_strategy(slot, std::make_unique<elysia::camera::HardFollowStrategy>());
+        camera_runtime().set_zoom(slot, 2.0f);
+        camera_runtime().set_center(slot, _player->center());
         _active = true;
     }
     catch (...)
@@ -70,11 +75,12 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
 
 RoomScene::~RoomScene() noexcept { clear_room(); }
 void RoomScene::on_exit() { clear_room(); }
-void RoomScene::reset() { clear_room(); }
+void RoomScene::on_reset() { clear_room(); }
 
 void RoomScene::clear_room() noexcept
 {
     _active = false;
+    game::release_player(_player_controller);
     _combat.clear();
     _projectiles.unbind_scene();
     if (_room.collision_world)
@@ -87,14 +93,13 @@ void RoomScene::clear_room() noexcept
     _player = nullptr;
     _room = {};
     _config = {};
-    _paused = false;
+    resume();
 }
 
-void RoomScene::on_update(double delta)
+void RoomScene::on_before_update(double delta)
 {
     if (_active && !_paused)
         _projectiles.update(delta);
-    elysia::gameplay::GameplayScene::on_update(delta);
 }
 
 std::optional<CharacterContext> RoomScene::capture_character_context() const
@@ -103,10 +108,10 @@ std::optional<CharacterContext> RoomScene::capture_character_context() const
         ? std::optional<CharacterContext>{_player->capture_context()} : std::nullopt;
 }
 
-std::optional<elysia::core::Rect> RoomScene::resolve_camera_focus_rect() const
+std::optional<elysia::camera::CameraFocus> RoomScene::resolve_camera_focus(elysia::camera::CameraSlot slot) const
 {
-    return _player && !_player->is_destroyed()
-        ? std::optional<elysia::core::Rect>{_player->world_rect()} : std::nullopt;
+    return slot == elysia::camera::CameraSlot::Main && _player && !_player->is_destroyed()
+        ? std::optional<elysia::camera::CameraFocus>{{_player->render_rect(), _player->render_rect()}} : std::nullopt;
 }
 
 void RoomScene::on_scene_object_registered(elysia::core::SceneObject& object)
@@ -128,10 +133,12 @@ void RoomScene::on_scene_object_registered(elysia::core::SceneObject& object)
     }
 }
 
-void RoomScene::on_scene_object_removing(elysia::core::SceneObject& object)
+void RoomScene::on_control_target_removing(elysia::core::SceneObject& object)
 {
+    if (auto* projectile = dynamic_cast<Projectile*>(&object))
+        projectile->detach_collision_listener();
     _combat.remove(object);
-    elysia::gameplay::GameplayScene::on_scene_object_removing(object);
+
     if (&object == _player) _player = nullptr;
     if (&object == _room.map)
     {
@@ -139,4 +146,23 @@ void RoomScene::on_scene_object_removing(elysia::core::SceneObject& object)
             (void)physics_world().clear_tile_world(*_room.collision_world);
         _room = {};
     }
+}
+
+void RoomScene::on_shortcuts(const elysia::input::RawInputFrame&,
+    const std::vector<elysia::input::RawInputEvent>& events)
+{
+    for (const auto& event : events)
+        if (event.type == elysia::input::RawInputEventType::ControlPressed
+            && event.control == elysia::input::RawInputControl::KeyEscape)
+        {
+            consume_input(event);
+            request_scene_switch(MainMenu);
+            return;
+        }
+}
+
+void RoomScene::on_game_fixed_update(std::uint64_t, double)
+{
+    if (_player && !is_paused())
+        game::fire_player_requests(*_player, camera(), _test_wand);
 }

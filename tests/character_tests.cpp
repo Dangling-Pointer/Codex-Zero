@@ -1,3 +1,11 @@
+#include "scene_harness.h"
+#include "game/scene/combat_scene.h"
+#include "game/combat/projectiles/bullet.h"
+#include "game/characters/character_manager.h"
+#include "game/map/dungeon_room.h"
+#include <limits>
+#include "game/scene/gameplay_setup.h"
+#include "game/enemy_generation/enemy_generator.h"
 #include "game/characters/player_character.h"
 #include "game/characters/enemy.h"
 #include "game/combat/collision/combat_collision_categories.h"
@@ -30,13 +38,14 @@ void check(bool condition, const char* message)
 }
 bool near(float a, float b) { return std::abs(a - b) < 0.001f; }
 
-class TestScene final : public elysia::gameplay::GameplayScene
+class TestScene : public elysia::gameplay::GameplayScene
 {
 public:
+    TestScene() : GameplayScene({.physics = elysia::physics::PhysicsWorldConfig{}}) {}
     using Scene::physics_world;
     void on_enter(const elysia::scene::ScenePayload&) override {}
     void on_exit() override {}
-    void reset() override {}
+    void on_reset() override {}
 };
 
 void definitions()
@@ -51,10 +60,10 @@ void definitions()
     check(near(player.move_speed(), 200) && near(enemy.move_speed(), 200), "move speeds");
     check(player.size() == elysia::core::Vector2{32, 32}, "player size retained");
     check(enemy.size() == elysia::core::Vector2{30, 30}, "enemy size retained");
-    const auto p = std::get<elysia::physics::AabbShape>(player.collider_definitions()[0].shape).local_rect;
+    const auto p = std::get<elysia::physics::BoxShape>(player.collider_definitions()[0].shape).local_bounds();
     check(near(p.left(), 5.6f) && near(p.top(), 19.84f)
         && near(p.width(), 20.8f) && near(p.height(), 12.16f), "player foot collider retained");
-    const auto e = std::get<elysia::physics::AabbShape>(enemy.collider_definitions()[0].shape).local_rect;
+    const auto e = std::get<elysia::physics::BoxShape>(enemy.collider_definitions()[0].shape).local_bounds();
     check(e == elysia::core::Rect{0, 0, 30, 30}, "enemy collider aligned with visual");
     for (Character* character : {static_cast<Character*>(&player), static_cast<Character*>(&enemy)})
     {
@@ -82,7 +91,7 @@ void definitions()
     check(commands[0].command_rect == player.render_rect(), "player render bounds");
     commands.clear();
     enemy.submit_render_commands(commands);
-    check(commands.size() == 1 && commands[0].command_rect == enemy.render_rect(), "enemy render bounds");
+    check(commands.size() == 2 && commands[0].command_rect == enemy.render_rect(), "enemy render bounds");
     check(player.collider_definitions()[0].filter.category
             == game::collision::categories::Player
         && enemy.collider_definitions()[0].filter.category
@@ -92,16 +101,18 @@ void definitions()
 
 void movement()
 {
-    TestScene scene;
+    test::SceneHarness<TestScene> host;
+    TestScene& scene = host.scene();
     auto* player = scene.create_and_add_object<PlayerCharacter>(elysia::core::Vector2{100, 100});
+    (void)game::bind_player(scene.control_context(), *player);
     auto* enemy = scene.create_and_add_object<Enemy>(elysia::core::Vector2{1000, 1000});
     check(scene.physics_world().registered_object_count() == 2
         && scene.physics_world().registered_collider_count() == 4, "one registration per character");
     auto input = [&](std::initializer_list<elysia::input::RawInputControl> keys) {
         elysia::input::RawInputFrame frame;
         for (auto key : keys) frame.state.set_pressed(key, true);
-        scene.on_input(frame, {});
-        scene.on_update(1.0 / 60.0);
+        host.input(frame, {});
+        host.update(1.0 / 60.0);
     };
     using Key = elysia::input::RawInputControl;
     input({Key::KeyD});
@@ -116,6 +127,24 @@ void movement()
     input({});
     check(player->velocity().is_zero() && player->facing() == Character::Facing::Left, "release stops and preserves facing");
     check(enemy->velocity().is_zero() && enemy->position() == elysia::core::Vector2{1000, 1000}, "enemy has no autonomous movement");
+    input({Key::KeyD});
+    scene.pause();
+    check(player->velocity().is_zero(), "pause cancels movement immediately");
+    host.update(1);
+    scene.resume();
+    input({});
+    check(player->velocity().is_zero(), "resume does not replay stale movement");
+    input({Key::KeyD});
+    host.input(elysia::input::InputSnapshot{.focus_lost = true});
+    check(player->velocity().is_zero(), "focus loss cancels movement immediately");
+    input({});
+    player->destroy();
+    host.update(0);
+    auto* replacement = scene.create_and_add_object<PlayerCharacter>(elysia::core::Vector2{100,100});
+    (void)game::bind_player(scene.control_context(), *replacement);
+    input({Key::KeyA});
+    check(replacement->velocity().x < 0, "removed target releases primary player binding");
+
 }
 
 template<class T> std::size_t count(elysia::scene::Scene& scene)
@@ -131,24 +160,123 @@ template<class T> std::size_t count(elysia::scene::Scene& scene)
 
 template<class T> void scene_lifecycle()
 {
-    T scene;
+    test::SceneHarness<T> host;
+    auto& scene = host.scene();
     for (int i = 0; i < 3; ++i)
     {
         std::cerr << "lifecycle " << i << " enter\n";
-        scene.on_enter({});
+        if (i > 0) host.enter({}, elysia::scene::SceneReloadMode::Reset);
         std::cerr << "entered\n";
-        scene.on_enter({});
-        check(count<Enemy>(scene) == 1 && count<PlayerCharacter>(scene) == 1
-            && count<Character>(scene) == 2, "one enemy and player per scene");
-        if (i == 1) scene.reset();
-        else scene.on_exit();
+        const auto enemies = count<Enemy>(scene);
+        check(enemies > 0 && count<PlayerCharacter>(scene) == 1
+            && count<Character>(scene) == enemies + 1, "generated enemies and one player");
+        float spent = 0;
+        static_cast<const elysia::object_query::IGameObjectQueryRuntime&>(scene)
+            .visit_game_objects(elysia::core::DepthLayerMask::all(), [&](auto& object) {
+                if (auto* enemy = dynamic_cast<Enemy*>(&object); enemy && !enemy->is_destroyed())
+                    spent += 1 + static_cast<int>(enemy->archetype());
+                return true;
+            });
+        check(near(spent, 25), "enemy purchases spend configured budget");
+        host.leave();
         std::cerr << "exited\n";
         check(count<Character>(scene) == 0, "exit/reset clears characters");
-        scene.on_update(0); // Release destroyed objects; repeated cleanup must remain safe.
+        host.update(0); // Release destroyed objects; repeated cleanup must remain safe.
         std::cerr << "updated\n";
-        scene.reset();
     }
 }
+void context_and_room()
+{
+    auto context = *CharacterManager::instance()->create_context("default_player");
+    context.health = 37;
+    context.max_health = 150;
+    context.move_speed = 123;
+    PlayerCharacter original({1,2}, context);
+    original.receive_attack({0,0,7});
+    auto saved = original.capture_context();
+    PlayerCharacter restored({3,4}, saved);
+    check(restored.health() == 30 && restored.max_health() == 150
+        && restored.move_speed() == 123 && saved.character_id == context.character_id,
+        "character context round trip");
+    auto dead = saved; dead.health = 0;
+    PlayerCharacter corpse({}, dead);
+    check(corpse.is_dead(), "zero health restores death");
+    for (const auto& collider : corpse.collider_definitions())
+        check(!collider.enabled, "restored corpse colliders disabled");
+    for (int i=0; i<7; ++i)
+    {
+        auto bad = saved;
+        if (i==0) bad.character_id = "missing";
+        if (i==1) bad.health = -1;
+        if (i==2) bad.health = bad.max_health + 1;
+        if (i==3) bad.max_health = 0;
+        if (i==4) bad.move_speed = -1;
+        if (i==5) bad.health = std::numeric_limits<float>::quiet_NaN();
+        if (i==6) bad.move_speed = std::numeric_limits<float>::infinity();
+        bool rejected = false;
+        try { PlayerCharacter invalid({}, bad); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "invalid context rejected");
+    }
+    const RoomScenePayload payload{saved, {}};
+    {
+        test::SceneHarness<CombatScene> host(payload);
+        auto& scene = host.scene();
+        for (auto mode : {elysia::scene::SceneReloadMode::Reuse, elysia::scene::SceneReloadMode::Reset})
+        {
+            check(scene.capture_character_context()->health == 30, "room restores player state");
+            check(count<PlayerCharacter>(scene) == 1 && count<Enemy>(scene) > 0, "combat room content");
+            const DungeonRoom* map = nullptr;
+            PlayerCharacter* player = nullptr;
+            static_cast<const elysia::object_query::IGameObjectQueryRuntime&>(scene)
+                .visit_game_objects(elysia::core::DepthLayerMask::all(), [&](auto& object) {
+                    if (auto* value = dynamic_cast<DungeonRoom*>(&object)) map = value;
+                    if (auto* value = dynamic_cast<PlayerCharacter*>(&object)) player = value;
+                    return true;
+                });
+            check(map && player, "room owns map and player");
+            auto at = player->position() - map->position();
+            check(map->tile_map().get(int(at.x/32), int(at.y/32)).type == TileType::Floor,
+                  "player spawns on walkable tile");
+            elysia::input::RawInputFrame frame;
+            frame.state.set_pressed(elysia::input::RawInputControl::KeyD, true);
+            host.input(frame, {}); host.update(1.0/60);
+            check(player->velocity().x > 0, "room player controller bound");
+            check(scene.camera().center().distance_squared_to(player->render_rect().center()) < 0.01f,
+                  "scene camera follows interpolated player");
+            Bullet_Attributes attributes;
+            attributes.start_position = player->center();
+            auto bullet = std::make_unique<Bullet>(attributes);
+            bullet->set_instigator(player->actor_id());
+            auto* live = scene.add_object(std::move(bullet));
+            host.update(0); // Register the physics listener before base-class retirement.
+            static_cast<elysia::core::GameObject*>(live)->destroy();
+            host.update(0);
+            host.update(1.0/60); // Must not dispatch a stale projectile listener.
+            host.leave();
+            check(!scene.capture_character_context() && count<Character>(scene)==0, "room exit clears state");
+            host.enter(payload, mode);
+        }
+        elysia::input::RawInputEvent escape;
+        escape.type = elysia::input::RawInputEventType::ControlPressed;
+        escape.control = elysia::input::RawInputControl::KeyEscape;
+        // The harness uses key 2 for its empty destination, matching MainMenu.
+        host.input({}, {escape});
+        check(host.manager.current_scene_key() == 2, "combat room Escape returns to menu");
+    }
+    for (int i=0; i<3; ++i)
+    {
+        auto bad = payload;
+        if (i==0) bad.room.grid_size.x = 0;
+        if (i==1) bad.character.health = -1;
+        bool rejected = false;
+        try {
+            test::SceneHarness<CombatScene> host(i==2 ? elysia::scene::ScenePayload{} : elysia::scene::ScenePayload{bad});
+        } catch (const std::exception&) { rejected = true; }
+        check(rejected, "invalid room payload fails through scene boundary");
+    }
+}
+
 }
 
 int main()
@@ -176,6 +304,7 @@ int main()
 #endif
     try
     {
+        context_and_room();
         definitions();
         movement();
         scene_lifecycle<GameScene>();

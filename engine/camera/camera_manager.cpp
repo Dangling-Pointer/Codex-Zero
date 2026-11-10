@@ -166,6 +166,18 @@ CameraUpdateResult CameraManager::update(
     return result;
 }
 
+void CameraManager::clear_transient_effects(CameraSlotSet slots) noexcept
+{
+    std::erase_if(_requests, [slots](const CameraRequest& request)
+    {
+        return slots.contains(request.slot);
+    });
+
+    for (std::size_t index = 0; index < _rigs.size(); ++index)
+        if (slots.contains(static_cast<CameraSlot>(index)))
+            _rigs[index].controller.clear_effects();
+}
+
 void CameraManager::reset(CameraSlot slot) noexcept
 {
     std::erase_if(_requests, [slot](const CameraRequest& request)

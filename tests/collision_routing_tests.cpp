@@ -1,3 +1,4 @@
+#include "scene_harness.h"
 #include "engine/scene/scene.h"
 #include "engine/physics/contracts/physics_participant.h"
 #include "engine/gameplay/collision/gameplay_collision_runtime.h"
@@ -13,7 +14,7 @@ public:
     explicit Box(float x) : GameObject(elysia::core::DepthLayer::Character)
     {
         set_world_rect({x,0,10,10});
-        collider.shape = AabbShape{{0,0,10,10}};
+        collider.shape = BoxShape::from_rect({0,0,10,10});
         collider.response = CollisionResponse::Overlap;
     }
     BodyDefinition body_definition() const override
@@ -24,13 +25,15 @@ public:
     void disable() { collider.enabled=false; update_physics_collider(0,collider); }
     Collider collider;
 };
-class TestScene final : public elysia::scene::Scene
+class TestScene : public elysia::scene::Scene
 {
 public:
+    TestScene() : Scene({.fixed_step = elysia::scene::FixedStepConfig{},
+                         .physics = elysia::physics::PhysicsWorldConfig{}}) {}
     using Scene::physics_world;
     void on_enter(const elysia::scene::ScenePayload&) override {}
     void on_exit() override {}
-    void reset() override {}
+    void on_reset() override {}
 };
 struct Recorder final : GameplayCollisionListener
 {
@@ -44,12 +47,19 @@ struct Recorder final : GameplayCollisionListener
 };
 struct Fixture
 {
-    TestScene scene;
+    test::SceneHarness<TestScene> host;
+    TestScene& scene = host.scene();
     GameplayCollisionRuntime runtime{scene.physics_world()};
+    void source()
+    {
+        auto* object = box(100);
+        ActorCollisionRig rig; rig.owner=1; rig.team=teams::Player; rig.body=object->physics_collider(0);
+        check(runtime.bind_actor(rig), "source rig registered");
+    }
     Box* box(float x=0) { return scene.create_and_add_object<Box>(x); }
-    void step() { scene.on_update(1.0/60); }
+    void step() { host.update(1.0/60); }
     HitBoxBinding hit(Box& box, ActorId owner, AttackInstanceId instance)
-    { return {{box.physics_collider(0),owner,teams::Player,ColliderRole::HitBox},1,instance,1}; }
+    { return {{box.physics_collider(0),owner ? owner : 4,teams::Player,ColliderRole::HitBox},1,instance,1}; }
     void hurt(Box& box, ActorId owner, TeamId team=teams::Enemy)
     { check(runtime.bind_collider({box.physics_collider(0),owner,team,ColliderRole::HurtBox}),"bind hurt"); }
 };
@@ -60,6 +70,8 @@ void validation()
     ActorCollisionRig rig; rig.team=teams::Enemy; rig.body=box->physics_collider(0);
     check(!f.runtime.bind_actor(rig),"rig owner required");
     auto hit=f.hit(*box,0,10);
+    auto no_owner = hit; no_owner.collider.owner=0;
+    check(!f.runtime.bind_hit_box(no_owner), "hit box owner required");
     auto bad=hit; bad.instigator=0; check(!f.runtime.bind_hit_box(bad),"source id required");
     bad=hit; bad.attack_instance=0; check(!f.runtime.bind_hit_box(bad),"instance required");
     bad=hit; bad.collider.team=0; check(!f.runtime.bind_hit_box(bad),"team required");
@@ -80,30 +92,70 @@ void source_removal()
     check(f.runtime.unbind_actor(1),"remove source bindings");
     check(f.scene.physics_world().contains_collider(melee->physics_collider(0)),"unbind is not physical removal");
     source->destroy();f.step();
-    check(recorder.events.size()==1,"only independent hostile hit survives");
-    check(recorder.events[0].hit_box.instigator==1 && recorder.events[0].hit_box.collider.owner==0
-        && recorder.events[0].hurt_box.owner==2,"attribution and team retained");
+    check(recorder.events.size()==1, "independent projectile survives source removal");
+    check(recorder.events.front().hit_box.instigator==1
+        && recorder.events.front().hit_box.collider.owner==4
+        && recorder.events.front().hit_box.collider.team==teams::Player
+        && recorder.events.front().hurt_box.owner==2,
+        "original attribution and registered team survive source removal");
+}
+void independent_team_and_cleanup()
+{
+    Fixture f; Recorder recorder;
+    check(f.runtime.add_listener(recorder), "independent hit listener");
+    // No source rig exists, and the attack's team overrides the helper's default Player team.
+    auto* bullet=f.box(); auto* player=f.box(); auto* enemy=f.box();
+    f.hurt(*player,2,teams::Player); f.hurt(*enemy,3,teams::Enemy);
+    auto hit=f.hit(*bullet,4,40);
+    hit.instigator=999;
+    hit.collider.team=teams::Enemy;
+    check(f.runtime.bind_hit_box(hit), "standalone hitbox requires no source or carrier rig");
+    f.step();
+    check(recorder.events.size()==1 && recorder.events.front().hurt_box.owner==2
+        && recorder.events.front().hit_box.instigator==999,
+        "standalone attack uses its registered team and preserves attribution");
+    check(f.runtime.unbind_actor(4), "carrier cleanup removes hitbox without an actor rig");
+    check(f.scene.physics_world().contains_collider(bullet->physics_collider(0)),
+        "carrier cleanup keeps physical ownership with scene");
+    check(f.scene.physics_world().teleport_object(player->physics_handle(),{100,0}), "leave hitbox");
+    f.step();
+    check(f.scene.physics_world().teleport_object(player->physics_handle(),{0,0}), "reenter hitbox");
+    f.step();
+    check(recorder.events.size()==1, "cleaned standalone attack cannot hit again");
+}
+void team_snapshot()
+{
+    Fixture f; f.source(); Recorder recorder;
+    check(f.runtime.add_listener(recorder), "snapshot listener");
+    auto* bullet=f.box(); auto* player=f.box(); auto* enemy=f.box();
+    f.hurt(*player,2,teams::Player); f.hurt(*enemy,3,teams::Enemy);
+    auto hit=f.hit(*bullet,4,50);
+    hit.collider.team=teams::Enemy; // Source rig is Player; attack snapshot is Enemy.
+    check(f.runtime.bind_hit_box(hit), "attack snapshot registered");
+    f.step();
+    check(recorder.events.size()==1 && recorder.events.front().hurt_box.owner==2,
+        "registered hitbox team is authoritative over live instigator team");
 }
 void end_during_dispatch()
 {
     // Simulate the same game-layer cancellation operation for action end, interruption and death.
     for(int reason=0;reason<3;++reason)
     {
-        Fixture f; Recorder first,second;
+        Fixture f; f.source(); Recorder first,second;
         auto* melee=f.box();auto* target=f.box();auto* target2=f.box();
         f.hurt(*target,2);f.hurt(*target2,3);
         check(f.runtime.bind_hit_box(f.hit(*melee,1,20)),"melee registered");
         first.callback=[&](const auto&) { melee->disable();f.runtime.end_attack_instance(20); };
         check(f.runtime.add_listener(first) && f.runtime.add_listener(second),"listeners");
         f.step();f.step();
-        check(first.events.size()==1 && second.events.empty(),"ending suppresses remaining listener and contact deliveries");
+        check(first.events.size()==1 && second.events.size()==1,"current contact reaches listener snapshot; ending suppresses future contacts");
         check(!melee->collider.enabled,"game disabled physical hitbox");
         f.runtime.end_attack_instance(20);
     }
 }
 void end_instance()
 {
-    Fixture f;Recorder recorder;check(f.runtime.add_listener(recorder),"listener");
+    Fixture f; f.source(); Recorder recorder;check(f.runtime.add_listener(recorder),"listener");
     auto* a=f.box();auto* b=f.box();auto* other=f.box();auto* target=f.box();f.hurt(*target,2);
     const auto ha=f.hit(*a,0,30),hb=f.hit(*b,0,30),hc=f.hit(*other,0,31);
     check(f.runtime.bind_hit_box(ha)&&f.runtime.bind_hit_box(hb)&&f.runtime.bind_hit_box(hc),"multiple hitboxes");
@@ -117,6 +169,6 @@ void end_instance()
 }
 int main()
 {
-    try { validation();source_removal();end_during_dispatch();end_instance();std::cout<<"Collision routing tests passed\n"; }
+    try { validation();source_removal();independent_team_and_cleanup();team_snapshot();end_during_dispatch();end_instance();std::cout<<"Collision routing tests passed\n"; }
     catch(const std::exception& e) { std::cerr<<e.what()<<'\n';return 1; }
 }

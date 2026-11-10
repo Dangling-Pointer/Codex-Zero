@@ -1,8 +1,10 @@
 #pragma once
 
+#include "../effect_request_failure.h"
 #include "../effect_types.h"
 #include "floating_number_glyph_cache.h"
 
+#include <expected>
 #include <memory>
 
 struct SDL_Renderer;
@@ -22,7 +24,7 @@ public:
 		const elysia::typography::FontResolver* font_resolver) noexcept;
 	void clear_cache() noexcept;
 
-	[[nodiscard]] std::unique_ptr<FloatingNumberEffect> create(
+	[[nodiscard]] std::expected<std::unique_ptr<FloatingNumberEffect>, EffectRequestFailure> create(
 		const FloatingNumberEffectSpawnRequest& request);
 
 private:

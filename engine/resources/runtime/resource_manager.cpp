@@ -118,6 +118,11 @@ MIX_Audio* elysia::resources::ResourceManager::find_sound(std::string_view key) 
 	return _audio_manager.find_sound(key);
 }
 
+bool elysia::resources::ResourceManager::has_music(std::string_view key) const
+{
+    return _audio_manager.has_music(key);
+}
+
 MIX_Audio* elysia::resources::ResourceManager::find_music(std::string_view key) const
 {
 	return _audio_manager.find_music(key);

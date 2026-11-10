@@ -5,6 +5,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include "audio_failure.h"
+#include "sound_distance.h"
+#include "../core/geometry/vector2.h"
 
 namespace elysia::audio
 {
@@ -46,6 +49,14 @@ struct SoundGroupConfig
     SoundOverflowPolicy overflow_policy = SoundOverflowPolicy::IgnoreNew;
 };
 
+enum class SoundScope { Scene, Global };
+enum class SoundPausePolicy { FollowScene, ContinueWhenPaused };
+struct SpatialSoundConfig
+{
+    elysia::core::Vector2 position{};
+    SoundDistanceConfig distance;
+};
+
 struct SoundPlayOptions
 {
     // nullopt is one-shot playback (SDL_mixer loops = 0).
@@ -55,6 +66,9 @@ struct SoundPlayOptions
     std::chrono::milliseconds fade_in{ 0 };
     // Finite, nonnegative instance multiplier, composed with settings and fades.
     double gain = 1.0;
+    SoundScope scope = SoundScope::Scene;
+    SoundPausePolicy pause_policy = SoundPausePolicy::FollowScene;
+    std::optional<SpatialSoundConfig> spatial;
 };
 
 using SoundHandle = std::uint64_t;
@@ -63,12 +77,11 @@ enum class SoundRequestStatus
 {
     Started,
     Scheduled,
-    Rejected,
 };
 
 struct SoundRequestResult
 {
-    SoundRequestStatus status = SoundRequestStatus::Rejected;
-    std::optional<SoundHandle> handle = std::nullopt;
+    SoundRequestStatus status = SoundRequestStatus::Started;
+    SoundHandle handle = 0;
 };
 }

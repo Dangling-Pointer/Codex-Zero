@@ -74,7 +74,8 @@ bool BuiltinMusicPlayer::play(BuiltinMusicId id, int loops,
 
 void BuiltinMusicPlayer::stop() noexcept
 {
-    elysia::audio::detail::MixerBackend::stop(_track);
+    const auto result=elysia::audio::detail::MixerBackend::stop(_track);
+    if(!result) elysia::audio::report_audio_failure(result.error());
 }
 
 bool BuiltinMusicPlayer::apply_volume()

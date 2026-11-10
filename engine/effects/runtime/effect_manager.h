@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../effect_request_failure.h"
 #include "../animation/animation_effect_factory.h"
 #include "../effect_types.h"
 #include "../screen/screen_effect_runtime.h"
@@ -55,12 +56,12 @@ public:
 	void clear_content() noexcept;
 
 private:
-	std::optional<ScreenEffectHandle> dispatch(const ScreenColorEffectRequest& request);
-	std::optional<ScreenEffectHandle> dispatch(const ScreenImageEffectRequest& request);
-	std::optional<ScreenEffectHandle> dispatch(const ScreenAnimationEffectRequest& request);
+	std::expected<ScreenEffectHandle, EffectRequestFailure> dispatch(const ScreenColorEffectRequest& request);
+	std::expected<ScreenEffectHandle, EffectRequestFailure> dispatch(const ScreenImageEffectRequest& request);
+	std::expected<ScreenEffectHandle, EffectRequestFailure> dispatch(const ScreenAnimationEffectRequest& request);
 	ScreenEffectRuntime _screen_effects;
-	[[nodiscard]] bool dispatch(const AnimationEffectSpawnRequest& request);
-	[[nodiscard]] bool dispatch(const FloatingNumberEffectSpawnRequest& request);
+	[[nodiscard]] std::expected<void, EffectRequestFailure> dispatch(const AnimationEffectSpawnRequest& request);
+	[[nodiscard]] std::expected<void, EffectRequestFailure> dispatch(const FloatingNumberEffectSpawnRequest& request);
 
 	void bind_active_scene(elysia::scene::Scene& scene) noexcept;
 	void unbind_active_scene(const elysia::scene::Scene& scene) noexcept;

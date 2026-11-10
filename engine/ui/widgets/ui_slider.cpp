@@ -929,8 +929,8 @@ void UiSlider::play_sound_if_set(std::string_view sound_key) const
 {
     if (sound_key.empty())
         return;
-    elysia::audio::AudioService::instance()->request_sound(sound_key,{
-        .group = elysia::audio::SoundGroup::Ui
+    (void)ELYSIA_AUDIO->request_sound(sound_key,{
+        .group = elysia::audio::SoundGroup::Ui, .scope = elysia::audio::SoundScope::Global
     });
 }
 

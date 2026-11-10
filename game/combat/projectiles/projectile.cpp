@@ -13,7 +13,7 @@ Projectile::Projectile(
     set_world_rect(elysia::core::Rect::from_center(start_position, start_size));
 
     // Configure collider and collision filtering
-    _collider.shape = elysia::physics::AabbShape{{0.0f, 0.0f, start_size.x, start_size.y}};
+    _collider.shape = elysia::physics::BoxShape::from_rect({0.0f, 0.0f, start_size.x, start_size.y});
     _collider.filter.category = collision_category;
     _collider.filter.mask = game::collision::categories::World;
     if (collision_category == game::collision::categories::PlayerAttack)
@@ -162,4 +162,8 @@ void Projectile::unregister_collision_listener() noexcept
 
     (void)physics_world()->remove_listener(*this);
     _listener_registered = false;
+}
+void Projectile::detach_collision_listener() noexcept
+{
+    unregister_collision_listener();
 }

@@ -62,10 +62,10 @@ bool CombatSystem::register_bullet(Bullet& bullet)
     if (!bullet.instigator())
         return false;
 
-    // Register the bullet collider as a gameplay hit box tied to this attack instance
-    HitBoxBinding hit{{bullet.physics_collider(0), InvalidActorId, team, ColliderRole::HitBox},
+    // The carrier owns hit-box cleanup; attribution retains the original caster ID.
+    // The registered team remains valid even after the caster leaves the scene.
+    HitBoxBinding hit{{bullet.physics_collider(0), bullet.collision_owner(), team, ColliderRole::HitBox},
                       bullet.instigator(), bullet.attack_instance(), 1};
-
     if (bullet.is_destroyed() || !_runtime.bind_hit_box(hit))
         return false;
 

@@ -431,13 +431,9 @@ bool Application::initialize_runtime(
     if (!check_startup_step(ttf_initialized,"platform","SDL_ttf Error"))
         return false;
 
-    if (!check_startup_step(
-        elysia::audio::AudioService::instance()->initialize(user_settings.audio),
-        "audio",
-        "AudioService initialization failed"))
-    {
-        return false;
-    }
+    if (auto audio_result = ELYSIA_AUDIO->initialize(user_settings.audio); !audio_result)
+        return startup_fail("audio",elysia::core::format_failure_diagnostic(
+            audio_result.error().diagnostic,"AUDIO-INIT","audio"),audio_result.error().diagnostic.origin);
 
 
 

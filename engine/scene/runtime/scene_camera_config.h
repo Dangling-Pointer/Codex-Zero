@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../camera/camera_types.h"
+#include <optional>
 
 namespace elysia::scene
 {
@@ -16,5 +17,6 @@ struct CameraSceneConfig
     elysia::camera::CameraSlotSet owned_slots = elysia::camera::CameraSlot::Main;
     CameraFocusMode focus_mode = CameraFocusMode::Manual;
     bool advance_when_paused = false;
+    std::optional<elysia::camera::CameraSlot> default_request_slot;
 };
 } // namespace elysia::scene

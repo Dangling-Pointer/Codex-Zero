@@ -49,7 +49,12 @@ struct ColliderBinding
 
 struct HitBoxBinding
 {
+    // owner identifies the attack carrier for cleanup; no ActorCollisionRig is required.
+    // team is copied at binding time and is authoritative for hit team relations.
+    // Use a distinct owner for attacks that must outlive their instigator.
     ColliderBinding collider{};
+    // Nonzero attribution ID, not an object reference. Its Actor may be unregistered.
+    // Changes to the instigator's team do not update this attack's registered team.
     ActorId instigator = InvalidActorId;
     AttackInstanceId attack_instance = InvalidAttackInstanceId;
     AttackDefinitionId attack_definition = InvalidAttackDefinitionId;

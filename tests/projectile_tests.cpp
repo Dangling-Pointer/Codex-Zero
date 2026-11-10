@@ -1,3 +1,4 @@
+#include "scene_harness.h"
 #include <cstdlib>
 #if defined(_MSC_VER) && defined(_DEBUG)
 #include <crtdbg.h>
@@ -15,6 +16,11 @@
 #include "game/characters/enemy.h"
 #include "game/characters/player_character.h"
 #include "game/scene/game_scene.h"
+#include "game/scene/combat_scene.h"
+#include "game/characters/character_manager.h"
+#include "game/input/game_actions.h"
+#include "game/input/game_input_map.h"
+#include "game/combat/player_fire.h"
 #include "engine/scene/scene.h"
 #include "engine/physics/physics_world.h"
 
@@ -30,23 +36,25 @@ void check(bool condition, const char* message)
     if (!condition) throw std::runtime_error(message);
 }
 
-class TestScene final : public elysia::scene::Scene
+class TestScene : public elysia::scene::Scene
 {
 public:
+    TestScene() : Scene({.fixed_step = elysia::scene::FixedStepConfig{},
+                         .physics = elysia::physics::PhysicsWorldConfig{}}) {}
     using Scene::physics_world;
     void on_enter(const elysia::scene::ScenePayload&) override {}
     void on_exit() override {}
-    void reset() override {}
+    void on_reset() override {}
 };
 
-class RecordingGameScene final : public GameScene
+template<class Base> class RecordingScene : public Base
 {
 public:
     std::size_t created_bullets = 0;
 protected:
     void on_scene_object_registered(elysia::core::SceneObject& object) override
     {
-        GameScene::on_scene_object_registered(object);
+        Base::on_scene_object_registered(object);
         if (dynamic_cast<Bullet*>(&object)) ++created_bullets;
     }
 };
@@ -65,7 +73,8 @@ template<class T> std::vector<T*> objects(elysia::scene::Scene& scene)
 
 struct Fixture
 {
-    TestScene scene;
+    test::SceneHarness<TestScene> host;
+    TestScene& scene = host.scene();
     ProjectileManager manager;
     PlayerCharacter* source = scene.create_and_add_object<PlayerCharacter>(elysia::core::Vector2{100, 100});
     elysia::gameplay::collision::ActorId source_actor = source->actor_id();
@@ -88,7 +97,8 @@ ShotDescriptor shot(float delay = 0)
 
 void projectile_collision_filter()
 {
-    TestScene scene;
+    test::SceneHarness<TestScene> host;
+    TestScene& scene = host.scene();
     auto* player_projectile = scene.create_and_add_object<Projectile>();
     auto* enemy_projectile = scene.create_and_add_object<Projectile>(
         elysia::core::Vector2{}, elysia::core::Vector2{1, 1}, elysia::core::Vector2{},
@@ -186,7 +196,7 @@ void moving_and_destroyed_sources()
     auto* source2 = f.scene.create_and_add_object<PlayerCharacter>(elysia::core::Vector2{500, 500});
     check(f.manager.enqueue_fire_request({source2->actor_id(), source2->physics_handle(), {shot(1)}}), "deleted source request");
     source2->destroy();
-    f.scene.on_update(0); // Actually releases source storage before the queue sees it.
+    f.host.update(0); // Actually releases source storage before the queue sees it.
     f.manager.update(1);
     check(f.manager.pending_count() == 0, "released source safely canceled");
 }
@@ -197,12 +207,15 @@ void validation_and_service()
     check(!service->request_fire({}), "no active manager");
     Fixture f;
     check(service->bind_manager(f.manager), "bind service");
-    Fixture other;
-    check(!service->bind_manager(other.manager), "reject competing manager");
-    check(!service->unbind_manager(other.manager), "wrong owner cannot detach");
+    TestScene other_scene;
+    ProjectileManager other_manager;
+    other_manager.bind_scene(other_scene, other_scene.physics_world());
+    auto* other_source = other_scene.create_and_add_object<PlayerCharacter>(elysia::core::Vector2{100,100});
+    check(!service->bind_manager(other_manager), "reject competing manager");
+    check(!service->unbind_manager(other_manager), "wrong owner cannot detach");
     check(!service->request_fire(f.request({})), "reject empty shots");
     check(!service->request_fire({elysia::gameplay::collision::InvalidActorId, {}, {shot()}}), "reject invalid source");
-    check(!service->request_fire(other.request({shot()})), "reject other scene source");
+    check(!service->request_fire(ProjectileFireRequest{other_source->actor_id(), other_source->physics_handle(), {shot()}}), "reject other scene source");
     auto invalid = shot();
     invalid.spawn_delay_sec = std::numeric_limits<float>::quiet_NaN();
     check(!service->request_fire(f.request({shot(), invalid})), "reject entire invalid request");
@@ -218,7 +231,7 @@ void validation_and_service()
     f.manager.unbind_scene();
     check(f.manager.pending_count() == 0 && objects<Bullet>(f.scene).empty(), "unbind clears live and queued bullets");
     check(!service->request_fire(f.request({shot()})), "service detached");
-    f.scene.on_update(0);
+    f.host.update(0);
     check(f.scene.physics_world().registered_object_count() == 1, "bullet physics removed");
     f.manager.bind_scene(f.scene, f.scene.physics_world());
     check(f.manager.enqueue_fire_request(f.request({shot()})), "rebind usable");
@@ -245,42 +258,188 @@ void nested_wand()
     check(objects<Bullet>(f.scene).size() == all, "all nested shots eventually spawn");
 }
 
-void game_scene_input_and_pause()
+
+// Preserve source initial and final states so edges use the same routing path as real input.
+struct InputSequence
 {
-    RecordingGameScene scene;
-    scene.on_enter({});
-    elysia::input::RawInputFrame input{};
-    elysia::input::RawInputEvent event{};
-    event.control = elysia::input::RawInputControl::KeyF;
-    event.type = elysia::input::RawInputEventType::ControlReleased;
-    scene.on_input(input, {event});
-    scene.on_update(0.01);
-    check(scene.created_bullets == 0, "key release does not fire");
-    event.type = elysia::input::RawInputEventType::ControlPressed;
-    scene.on_input(input, {event});
-    scene.pause();
-    scene.on_input(input, {event});
-    scene.on_update(1);
-    check(scene.created_bullets == 0, "pause freezes queued shots");
-    scene.resume();
-    scene.on_update(0.01);
-    check(scene.created_bullets == 0, "pause did not advance delay");
-    scene.on_update(0.20);
+    elysia::input::RawInputState keyboard, mouse;
+    elysia::input::InputSnapshot next(std::vector<elysia::input::RawInputEvent> events = {},
+        elysia::input::InputCapture capture = elysia::input::InputCapture::None, bool focus_lost = false)
+    {
+        using namespace elysia::input;
+        InputSnapshot snapshot;
+        snapshot.sources = {{.source = InputSourceId::keyboard(), .initial_state = keyboard},
+                            {.source = InputSourceId::mouse(), .initial_state = mouse}};
+        for (const auto& event : events)
+            apply_raw_event(event.source.is_mouse() ? mouse : keyboard, event);
+        snapshot.sources[0].frame.state = keyboard;
+        snapshot.sources[1].frame.state = mouse;
+        snapshot.events = std::move(events);
+        snapshot.capture = capture;
+        snapshot.focus_lost = focus_lost;
+        return snapshot;
+    }
+};
+elysia::input::RawInputEvent button(elysia::input::RawInputControl control, bool pressed,
+                                   elysia::core::Vector2 pointer = {})
+{
+    using namespace elysia::input;
+    RawInputEvent event;
+    event.control = control;
+    event.type = pressed ? RawInputEventType::ControlPressed : RawInputEventType::ControlReleased;
+    const bool mouse = control == RawInputControl::MouseLeft;
+    event.source = mouse ? InputSourceId::mouse() : InputSourceId::keyboard();
+    event.device = mouse ? InputDevice::Mouse : InputDevice::Keyboard;
+    event.mouse_x = int(pointer.x); event.mouse_y = int(pointer.y);
+    return event;
+}
+void input_map_and_aim()
+{
+    using namespace elysia::input;
+    auto map = game::input::make_player_input_map();
+    check(map.valid() && map.bindings(game::input::actions::Move).size()==4
+        && map.bindings(game::input::actions::Fire).size()==2
+        && !map.contains(elysia::gameplay::actions::Jump), "game map contains only intended bindings");
+    InputSequence sequence;
+    auto started = [&](std::vector<RawInputEvent> events) {
+        auto resolved = map.resolve(sequence.next(std::move(events)));
+        return std::ranges::count_if(resolved.events, [](const auto& event) {
+            return event.action == game::input::actions::Fire && event.phase == ActionInputPhase::Started;
+        });
+    };
+    check(started({button(RawInputControl::MouseLeft,true),button(RawInputControl::KeyF,true)})==1,
+          "left mouse and F combine into one fire action");
+    check(started({})==0, "held action has no new start");
+    check(started({button(RawInputControl::MouseLeft,false)})==0, "F maintains combined held state");
+    check(started({button(RawInputControl::KeyF,false)})==0, "release does not start fire");
+    check(started({button(RawInputControl::KeyF,true),button(RawInputControl::KeyF,false)})==1,
+          "short press between ticks retains start");
+    // Resolve each retained movement binding, including the gamepad variants.
+    for (auto key : {RawInputControl::KeyW, RawInputControl::KeyUp, RawInputControl::GamepadDPadUp})
+    {
+        auto source = key == RawInputControl::GamepadDPadUp
+            ? InputSourceId{42,InputSourceKind::Gamepad} : InputSourceId::keyboard();
+        InputSnapshot snapshot;
+        snapshot.sources.push_back({.source=source});
+        snapshot.sources[0].frame.state.set_pressed(key, true);
+        auto move = game::input::make_player_input_map().resolve(snapshot).frame.axis2d(game::input::actions::Move);
+        check(move.y < 0 && move.x==0, "keyboard and D-pad movement retained");
+    }
+    InputSnapshot stick;
+    stick.sources.push_back({.source={42,InputSourceKind::Gamepad}});
+    stick.sources[0].frame.state.set_axis(RawInputAxis::GamepadLeftX, 1);
+    check(game::input::make_player_input_map().resolve(stick).frame.axis2d(game::input::actions::Move).x > 0,
+          "left stick movement retained");
+
+    Fixture f;
+    check(ProjectileService::instance()->bind_manager(f.manager), "bind aiming test manager");
+    elysia::camera::Camera camera({500,-300},{1280,720},2.5f);
+    const auto center = f.source->render_rect().center();
+    for (auto direction : {elysia::core::Vector2{0,-1}, elysia::core::Vector2{-1,0},
+                           elysia::core::Vector2{1,1}.normalized()})
+    {
+        const auto pointer = camera.world_to_screen(center + direction * 200);
+        check(game::player_fire_direction(*f.source, camera, pointer).nearly_equals(direction),
+              "translated zoomed camera maps cursor to world direction");
+    }
+    check(game::player_fire_direction(*f.source,camera,{}).nearly_equals({1,0}), "missing pointer faces right");
+    check(game::player_fire_direction(*f.source,camera,camera.world_to_screen(center)).nearly_equals({1,0}),
+          "center pointer falls back to facing");
+    elysia::gameplay::ControlCommand command;
+    command.state.set(game::input::actions::Move, InputActionValueType::Axis2D, {-1,0});
+    f.source->on_control_command(command, 1.0/60);
+    check(game::player_fire_direction(*f.source,camera,{}).nearly_equals({-1,0}), "left facing fallback");
+    command.events.push_back({game::input::actions::Fire, InputActionValueType::Button, ActionInputPhase::Started});
+    command.pointer_position = camera.world_to_screen(center + elysia::core::Vector2{0,-200});
+    f.source->on_control_command(command, 1.0/60);
+    f.source->on_control_cancelled(InputCancelReason::FocusLost);
+    check(f.source->take_fire_requests().empty(), "cancellation clears pending fire request");
+    f.source->on_control_command(command, 1.0/60);
     Wand wand;
-    auto shots = wand.attack({1, 0});
-    std::size_t first = 0;
-    for (const auto& s : shots) if (s.spawn_delay_sec <= 0.21f) ++first;
-    // Count registrations: existing Block collision rules can destroy overlapping
-    // scatter bullets during the same update, independently of scheduling.
-    check(scene.created_bullets == first, "single press batch and paused input rejected");
-    scene.on_exit();
+    game::fire_player_requests(*f.source,camera,wand);
+    auto expected = wand.attack({0,-1});
+    float first_delay = std::numeric_limits<float>::max();
+    for (const auto& shot : expected) first_delay = std::min(first_delay, shot.spawn_delay_sec);
+    f.manager.update(first_delay);
+    auto bullets = objects<Bullet>(f.scene);
+    std::vector<ShotDescriptor> first;
+    for (const auto& shot : expected) if (shot.spawn_delay_sec==first_delay) first.push_back(shot);
+    check(!bullets.empty() && bullets.size()==first.size(), "aimed batch reaches scheduler");
+    for (std::size_t i=0;i<first.size();++i)
+    {
+        check(bullets[i]->projectile_velocity().nearly_equals(first[i].bullet_attributes.starting_velocity),
+              "actual projectile velocity follows mouse aim and spread");
+        check(bullets[i]->center().nearly_equals(center + first[i].spawn_offset),
+              "actual projectile spawns relative to player center");
+    }
+    f.source->on_control_command(command, 1.0/60);
+    f.source->receive_attack({0,0,100});
+    check(f.source->take_fire_requests().empty(), "death clears pending fire request");
+    f.source->on_control_command(command, 1.0/60);
+    check(f.source->take_fire_requests().empty(), "dead player rejects fire");
+}
+
+template<class Base> void game_scene_input_and_pause(const elysia::scene::ScenePayload& payload = {})
+{
+    using namespace elysia::input;
+    test::SceneHarness<RecordingScene<Base>> host(payload);
+    auto& scene = host.scene();
+    InputSequence input;
+    constexpr double tick = 1.0/60;
+    Wand wand;
+    const auto shots = wand.attack({1,0});
+    const auto batch = shots.size();
+    double drain = 0;
+    for (const auto& shot : shots) drain = std::max(drain, double(shot.spawn_delay_sec));
+    drain += 0.1;
+    // First input arrives before a fixed tick, then release arrives before the next.
+    host.input(input.next({button(RawInputControl::MouseLeft,true,{640,100}),
+                           button(RawInputControl::KeyF,true)}));
+    host.input(input.next({button(RawInputControl::MouseLeft,false),button(RawInputControl::KeyF,false)}));
+    host.update(tick);
+    check(scene.created_bullets==0, "fixed command queues fire without immediate scene mutation");
+    scene.pause(); host.update(1);
+    check(scene.created_bullets==0, "pause freezes already scheduled shots");
+    scene.resume(); host.update(drain);
+    check(scene.created_bullets==batch, "short mouse and F press yields one complete batch");
+    host.input(input.next({button(RawInputControl::KeyF,true)})); host.update(tick);
+    host.update(drain); host.update(drain);
+    check(scene.created_bullets==batch*2, "F fires once and held key does not repeat across fixed steps");
+    host.input(input.next({button(RawInputControl::KeyF,false)})); host.update(tick);
+    host.update(drain);
+    check(scene.created_bullets==batch*2, "release does not fire");
+    // A command cancelled before its first fixed tick must not schedule any shots.
+    host.input(input.next({button(RawInputControl::KeyF,true)}));
+    scene.pause(); host.update(1); scene.resume();
+    host.input(input.next({button(RawInputControl::KeyF,false)})); host.update(tick); host.update(drain);
+    check(scene.created_bullets==batch*2, "pause cancels unconsumed press");
+    host.input(input.next({button(RawInputControl::KeyF,true)}));
+    host.input(input.next({}, InputCapture::None, true));
+    host.update(tick); host.update(drain);
+    host.input(input.next({button(RawInputControl::KeyF,false)})); host.update(tick);
+    check(scene.created_bullets==batch*2, "focus loss cancels unconsumed press");
+    host.input(input.next({button(RawInputControl::MouseLeft,true,{640,100})},InputCapture::Pointer));
+    host.update(tick); host.update(drain);
+    host.input(input.next({button(RawInputControl::MouseLeft,false)})); host.update(tick);
+    host.input(input.next({button(RawInputControl::KeyF,true)},InputCapture::Keyboard));
+    host.update(tick); host.update(drain);
+    host.input(input.next({button(RawInputControl::KeyF,false)})); host.update(tick);
+    check(scene.created_bullets==batch*2, "captured pointer and keyboard do not fire");
+    auto players = objects<PlayerCharacter>(scene);
+    check(players.size()==1, "one player in either entry");
+    auto start = players[0]->position();
+    host.input(input.next({button(RawInputControl::KeyD,true)})); host.update(tick*2);
+    check(players[0]->velocity().x>0 && players[0]->position().x>start.x, "both scenes retain mapped movement");
+    host.input(input.next({button(RawInputControl::KeyD,false)})); host.update(tick);
+    host.leave();
     check(objects<Bullet>(scene).empty(), "exit destroys projectiles");
-    scene.reset();
-    scene.on_enter({});
-    scene.on_update(0.01);
-    check(objects<Bullet>(scene).empty(), "reentry has no residual shots");
-    check(scene.created_bullets == first, "reentry did not emit old queued shots");
-    scene.on_exit();
+    host.enter(payload);
+    host.update(drain);
+    check(scene.created_bullets==batch*2 && objects<Bullet>(scene).empty(), "reentry has no residual shots");
+    host.input(input.next({button(RawInputControl::MouseLeft,true,{640,100})})); host.update(tick); host.update(drain);
+    check(scene.created_bullets==batch*3, "mouse fire controller rebinds on reentry");
+    host.input(input.next({button(RawInputControl::KeyEscape,true)}));
+    check(host.manager.current_scene_key()==2, "Escape still returns to menu");
 }
 
 void movement_and_wall_collision()
@@ -311,12 +470,12 @@ void movement_and_wall_collision()
     f.manager.update(0);
     auto* bullet = objects<Bullet>(f.scene).front();
     const auto x = bullet->center().x;
-    f.scene.on_update(1.0 / 60);
+    f.host.update(1.0 / 60);
     check(bullet->center().x > x, "spawned bullet moves");
     bool bounced = false;
     for (int i = 0; i < 30; ++i)
     {
-        f.scene.on_update(1.0 / 60);
+        f.host.update(1.0 / 60);
         auto live = objects<Bullet>(f.scene);
         check(live.size() == 1, "bullet survives its first wall bounce");
         if (live.front()->projectile_velocity().x < 0) { bounced = true; break; }
@@ -351,7 +510,10 @@ int main()
         moving_and_destroyed_sources();
         validation_and_service();
         nested_wand();
-        game_scene_input_and_pause();
+        input_map_and_aim();
+        game_scene_input_and_pause<GameScene>();
+        game_scene_input_and_pause<CombatScene>(RoomScenePayload{
+            *CharacterManager::instance()->create_context("default_player"), {}});
         movement_and_wall_collision();
         {
             Fixture f;

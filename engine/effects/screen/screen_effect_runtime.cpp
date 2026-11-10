@@ -94,55 +94,101 @@ ScreenEffectHandle ScreenEffectRuntime::insert(Effect effect)
     return {static_cast<std::uint32_t>(_slots.size() - 1), 1};
 }
 
-std::optional<ScreenEffectHandle> ScreenEffectRuntime::create(const ScreenColorEffectRequest& r, const void* scene,
+std::expected<ScreenEffectHandle, EffectRequestFailure> ScreenEffectRuntime::create(const ScreenColorEffectRequest& r, const void* scene,
     std::optional<std::size_t> frame)
 {
-    if (!scene || !valid(r.playback)) return {};
+    if (!scene)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::NoActiveScene,
+            "Screen color effect requires an active scene."));
+    if (!valid(r.playback))
+        return std::unexpected(make_effect_request_failure(EffectRequestError::InvalidRequest,
+            "Screen color effect playback has invalid durations, opacity, end mode, layer or clock."));
     Effect e;
     e.playback = r.playback; e.scene = scene; e.color = r.color;
     e.created_frame = frame;
     return insert(std::move(e));
 }
 
-std::optional<ScreenEffectHandle> ScreenEffectRuntime::create(const ScreenImageEffectRequest& r, SDL_Texture* texture, const void* scene,
+std::expected<ScreenEffectHandle, EffectRequestFailure> ScreenEffectRuntime::create(const ScreenImageEffectRequest& r, SDL_Texture* texture, const void* scene,
     std::optional<std::size_t> frame)
 {
-    if (!scene || !texture || !valid(r.playback) || !valid_layout(r.fit, r.placement)) return {};
+    if (!scene)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::NoActiveScene,
+            "Screen image effect requires an active scene.", r.texture_key));
+    if (!texture)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::MissingTexture,
+            "Screen image effect texture does not exist.", r.texture_key));
+    if (!valid(r.playback))
+        return std::unexpected(make_effect_request_failure(EffectRequestError::InvalidRequest,
+            "Screen image effect playback has invalid durations, opacity, end mode, layer or clock.", r.texture_key));
+    if (!valid_layout(r.fit, r.placement))
+        return std::unexpected(make_effect_request_failure(EffectRequestError::InvalidRequest,
+            "Screen image effect fit, anchor, offset or scale is invalid.", r.texture_key));
     Effect e;
-    if (!SDL_GetTextureSize(texture, &e.width, &e.height) || e.width <= 0 || e.height <= 0) return {};
+    if (!SDL_GetTextureSize(texture, &e.width, &e.height))
+        return std::unexpected(make_effect_request_failure(EffectRequestError::CreationFailed,
+            std::string("SDL_GetTextureSize failed: ") + SDL_GetError(), r.texture_key));
+    if (e.width <= 0 || e.height <= 0)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::CreationFailed,
+            "Screen image texture dimensions must be positive.", r.texture_key));
     e.playback = r.playback; e.scene = scene; e.texture = texture; e.fit = r.fit;
     e.placement = r.placement; e.natural_width = e.width; e.natural_height = e.height;
     e.created_frame = frame;
     return insert(std::move(e));
 }
 
-std::optional<ScreenEffectHandle> ScreenEffectRuntime::create(const ScreenAnimationEffectRequest& r,
+std::expected<ScreenEffectHandle, EffectRequestFailure> ScreenEffectRuntime::create(const ScreenAnimationEffectRequest& r,
     std::unique_ptr<elysia::animation::Animation> animation,
     const elysia::animation::AnimationDefinition& definition,
     elysia::core::Vector2 natural_size, double angle, const void* scene, std::optional<std::size_t> frame)
 {
     auto playback = r.playback;
     if (playback.end == ScreenEffectEnd::AnimationFinished) playback.end = ScreenEffectEnd::Manual;
-    if (!scene || !animation || !definition.atlas || definition.atlas->empty()
-        || !valid(playback) || !valid_layout(r.fit, r.placement) || !std::isfinite(angle)
-        || !std::isfinite(definition.fps) || definition.fps <= 0
-        || (r.loop && r.playback.end == ScreenEffectEnd::AnimationFinished)
-        || (r.flip != elysia::core::SpriteFlip::None && r.flip != elysia::core::SpriteFlip::Horizontal
-            && r.flip != elysia::core::SpriteFlip::Vertical && r.flip != elysia::core::SpriteFlip::Both)) return {};
+    if (!scene)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::NoActiveScene,
+            "Screen animation effect requires an active scene.", r.effect_key));
+    if (!animation)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::CreationFailed,
+            "Screen animation instance creation failed: " + definition.animation_key, r.effect_key));
+    if (!definition.atlas || definition.atlas->empty())
+        return std::unexpected(make_effect_request_failure(EffectRequestError::CreationFailed,
+            "Screen animation atlas is missing or empty: " + definition.atlas_key, r.effect_key));
+    if (!valid(playback))
+        return std::unexpected(make_effect_request_failure(EffectRequestError::InvalidRequest,
+            "Screen animation playback has invalid durations, opacity, end mode, layer or clock.", r.effect_key));
+    if (!valid_layout(r.fit, r.placement) || !std::isfinite(angle))
+        return std::unexpected(make_effect_request_failure(EffectRequestError::InvalidRequest,
+            "Screen animation fit, anchor, offset, scale or angle is invalid.", r.effect_key));
+    if (!std::isfinite(definition.fps) || definition.fps <= 0)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::CreationFailed,
+            "Screen animation FPS must be finite and positive: " + definition.animation_key, r.effect_key));
+    if (r.loop && r.playback.end == ScreenEffectEnd::AnimationFinished)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::InvalidRequest,
+            "Looping screen animations cannot end on AnimationFinished.", r.effect_key));
+    if (r.flip != elysia::core::SpriteFlip::None && r.flip != elysia::core::SpriteFlip::Horizontal
+        && r.flip != elysia::core::SpriteFlip::Vertical && r.flip != elysia::core::SpriteFlip::Both)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::InvalidRequest,
+            "Screen animation flip is invalid.", r.effect_key));
     for (std::size_t i = 0; i < definition.atlas->size(); ++i)
     {
         const auto* f = definition.atlas->frame_at(i);
-        if (!f || !f->_texture || f->_width <= 0 || f->_height <= 0) return {};
+        if (!f || !f->_texture || f->_width <= 0 || f->_height <= 0)
+            return std::unexpected(make_effect_request_failure(EffectRequestError::CreationFailed,
+                "Screen animation atlas frame has no texture or positive dimensions: " + std::to_string(i), r.effect_key));
     }
     Effect e;
     const auto* first = definition.atlas->frame_at(0);
     e.width = static_cast<float>(first->_width); e.height = static_cast<float>(first->_height);
     if (natural_size.is_zero()) natural_size = {e.width, e.height};
     if (!std::isfinite(natural_size.x) || !std::isfinite(natural_size.y)
-        || natural_size.x <= 0 || natural_size.y <= 0) return {};
+        || natural_size.x <= 0 || natural_size.y <= 0)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::CreationFailed,
+            "Screen animation natural size must be finite and positive.", r.effect_key));
     e.natural_width = natural_size.x; e.natural_height = natural_size.y;
     e.animation_duration = definition.atlas->size() / definition.fps;
-    if (!std::isfinite(e.animation_duration) || e.animation_duration <= 0) return {};
+    if (!std::isfinite(e.animation_duration) || e.animation_duration <= 0)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::CreationFailed,
+            "Screen animation duration must be finite and positive.", r.effect_key));
     animation->set_loop(r.loop);
     e.animation = std::move(animation);
     e.playback = r.playback; e.scene = scene; e.fit = r.fit; e.placement = r.placement;

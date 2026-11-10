@@ -1,45 +1,43 @@
 #pragma once
-
 #include "audio_fade.h"
+#include "audio_failure.h"
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <utility>
 
 namespace elysia::audio
 {
 struct MusicTransitionOptions
 {
-    int loops = -1;
-    std::chrono::milliseconds fade_out{0};
-    std::chrono::milliseconds fade_in{0};
+    int loops=-1;
+    std::chrono::milliseconds fade_out{0},fade_in{0};
 };
-
 class MusicPlaybackController
 {
 public:
     struct Backend
     {
-        // Apply the initial gain before starting playback, not after.
-        std::function<bool(std::string_view,int,double)> start;
-        std::function<void()> stop;
+        std::function<AudioResult<void>(std::string_view,int,double)> start;
+        std::function<AudioResult<void>()> stop;
         std::function<bool()> playing;
-        std::function<void(double)> volume;
+        std::function<AudioResult<void>(double)> volume;
     };
-    bool play(std::string_view key,int loops,std::chrono::milliseconds fade_in,const Backend& backend);
-    bool transition(std::string_view key,const MusicTransitionOptions& options,const Backend& backend);
-    void stop(std::chrono::milliseconds fade_out,const Backend& backend);
-    void update(double seconds,const Backend& backend);
+    using FailureCallback=std::function<void(const AudioFailure&)>;
+    AudioResult<void> play(std::string_view key,int loops,std::chrono::milliseconds fade_in,const Backend& backend);
+    AudioResult<void> transition(std::string_view key,const MusicTransitionOptions& options,const Backend& backend);
+    AudioResult<void> stop(std::chrono::milliseconds fade_out,const Backend& backend);
+    void update(double seconds,const Backend& backend,const FailureCallback& failed={});
     void reset();
-    [[nodiscard]] double gain() const { return _fade.gain(); }
+    double gain() const { return _fade.gain(); }
 private:
-    struct Request { std::string key; int loops; std::chrono::milliseconds fade_in; };
-    bool start(const Request& request,const Backend& backend);
-    bool start_pending(const Backend& backend);
+    struct Request { std::string key;int loops;std::chrono::milliseconds fade_in; };
+    AudioResult<void> start(const Request& request,const Backend& backend);
+    AudioResult<void> start_pending(const Backend& backend);
     std::string _key;
     std::optional<Request> _pending;
     AudioFade _fade;
-    bool _stopping = false;
+    bool _stopping=false;
+    std::optional<AudioError> _reported_error;
 };
 }

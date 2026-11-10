@@ -2,10 +2,12 @@
 
 #include "scene_camera_config.h"
 #include "../../camera/camera_manager.h"
+#include "../../camera/camera_service_types.h"
 
 #include <array>
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace elysia::scene
 {
@@ -37,6 +39,7 @@ class SceneCameraRuntime final
 {
 public:
     explicit SceneCameraRuntime(CameraSceneConfig config);
+    ~SceneCameraRuntime();
     SceneCameraRuntime(const SceneCameraRuntime&) = delete;
     SceneCameraRuntime& operator=(const SceneCameraRuntime&) = delete;
     SceneCameraRuntime(SceneCameraRuntime&&) = delete;
@@ -95,6 +98,22 @@ public:
     void reset() noexcept;
 
 private:
+    friend class elysia::camera::CameraService;
+    using OperationState = std::shared_ptr<elysia::camera::detail::CameraOperationState>;
+    using Status = elysia::camera::CameraOperationStatus;
+    enum class RequestKind { Shake, SnapToFocus, ClearEffects };
+    struct Request
+    {
+        RequestKind kind;
+        elysia::camera::CameraSlot slot;
+        elysia::camera::CameraShakeParams shake{};
+    };
+    void finish_motion(std::size_t index, Status status) noexcept;
+    void finish_blend(Status status) noexcept;
+    void end_service_activity() noexcept;
+    void clear_owned_transient_effects() noexcept;
+    void flush_requests();
+
     struct ActiveBlend
     {
         elysia::camera::CameraBlendId id;
@@ -117,5 +136,8 @@ private:
                static_cast<std::size_t>(elysia::camera::CameraSlot::Count)>
         _motions{};
     std::uint64_t _next_blend_id = 1;
+    std::array<OperationState, static_cast<std::size_t>(elysia::camera::CameraSlot::Count)> _motion_operations{};
+    OperationState _blend_operation;
+    std::vector<Request> _requests;
 };
 } // namespace elysia::scene

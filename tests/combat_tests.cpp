@@ -1,3 +1,4 @@
+#include "scene_harness.h"
 #include <cstdlib>
 #if defined(_MSC_VER) && defined(_DEBUG)
 #include <crtdbg.h>
@@ -22,8 +23,10 @@ void check(bool value, const char* message) { if (!value) throw std::runtime_err
 class TestScene : public GameScene
 {
 public:
+    void on_enter(const elysia::scene::ScenePayload&) override {}
     using GameScene::physics_world;
     using GameScene::collision_runtime;
+    using GameScene::combat_system;
 };
 class CountingEnemy : public Enemy
 {
@@ -54,7 +57,7 @@ Bullet* fire(TestScene& scene, Character& source, elysia::core::Vector2 at,
     bullet->set_instigator(source.actor_id());
     return scene.add_object(std::move(bullet));
 }
-void step(TestScene& scene) { scene.on_update(1.0/60); }
+void step(test::SceneHarness<TestScene>& host) { host.update(1.0/60); }
 void health()
 {
     CountingEnemy enemy({0,0});
@@ -69,51 +72,64 @@ void health()
     for (const auto& collider : enemy.collider_definitions()) check(!collider.enabled, "dead collider disabled");
     std::vector<elysia::core::RenderCommand> commands;
     enemy.submit_render_commands(commands);
-    check(commands.size()==1 && commands.front().color == elysia::core::colors::gray_500, "death rendered gray");
+    check(commands.size()==2 && commands.front().color == elysia::core::colors::gray_500, "death rendered gray");
     check(!enemy.receive_attack({0,0,1}).accepted && enemy.deaths == 1, "one death");
     Enemy destroyed({0,0}); destroyed.destroy();
     check(!destroyed.receive_attack({0,0,1}).accepted, "destroyed rejected");
 }
 void routing()
 {
-    TestScene scene;
+    test::SceneHarness<TestScene> host;
+    TestScene& scene = host.scene();
     auto* source = scene.create_and_add_object<PlayerCharacter>(elysia::core::Vector2{500,500});
+    const auto source_actor = source->actor_id();
+    AttackInfo last_attack;
+    scene.combat_system().on_damage = [&](auto, const auto& attack, const auto&) { last_attack = attack; };
     auto* enemy = scene.create_and_add_object<MultiHurt>();
+    const auto colliders = scene.physics_world().registered_collider_count();
     auto* bullet = fire(scene,*source,{110,110},20,5);
-    step(scene);
+    check(bullet->collider_definitions().size()==1
+        && scene.physics_world().registered_collider_count()==colliders+1,
+        "combat bullet registers exactly one physical collider");
+    check(bullet->collision_owner()!=source_actor, "projectile carrier is distinct from source");
+    step(host);
     check(enemy->health()==80, "multi hurt deduplicated");
-    step(scene); check(enemy->health()==80, "persistent overlap once");
-    scene.physics_world().teleport_object(bullet->physics_handle(),{300,300}); step(scene);
-    scene.physics_world().teleport_object(bullet->physics_handle(),{110,110}); step(scene);
+    step(host); check(enemy->health()==80, "persistent overlap once");
+    scene.physics_world().teleport_object(bullet->physics_handle(),{300,300}); step(host);
+    scene.physics_world().teleport_object(bullet->physics_handle(),{110,110}); step(host);
     check(enemy->health()==80, "reentry once");
-    fire(scene,*source,{110,110}); step(scene);
+    fire(scene,*source,{110,110}); step(host);
     check(enemy->health()==60, "separate bullet");
-    source->destroy(); step(scene);
+    source->destroy(); step(host);
     auto* other = scene.create_and_add_object<::Enemy>(elysia::core::Vector2{300,300});
-    scene.physics_world().teleport_object(bullet->physics_handle(),{310,310}); step(scene);
+    scene.physics_world().teleport_object(bullet->physics_handle(),{310,310}); step(host);
     check(other->health()==80, "source removal keeps projectile");
-    other->receive_attack({0,0,100}); step(scene);
+    check(last_attack.instigator==source_actor && last_attack.instance==bullet->attack_instance(),
+        "damage preserves original caster after source storage is released");
+    other->receive_attack({0,0,100}); step(host);
     check(other->velocity().is_zero(), "death stops movement");
     auto* passer = scene.create_and_add_object<PlayerCharacter>(elysia::core::Vector2{305,305});
-    const auto position = passer->position(); step(scene);
+    const auto position = passer->position(); step(host);
     check(passer->position().distance_squared_to(position)<0.001f, "dead body does not push player");
 }
 void teams_and_zero()
 {
     using namespace game::collision::categories;
-    TestScene scene;
+    test::SceneHarness<TestScene> host;
+    TestScene& scene = host.scene();
     auto* player = scene.create_and_add_object<PlayerCharacter>(elysia::core::Vector2{100,100});
     auto* enemy = scene.create_and_add_object<::Enemy>(elysia::core::Vector2{300,300});
     auto* zero = fire(scene,*player,{310,310},0,1);
-    step(scene); check(enemy->health()==100 && !zero->is_destroyed(), "zero keeps projectile");
-    fire(scene,*player,{110,110}); step(scene); check(player->health()==100,"friendly ignored");
-    fire(scene,*enemy,{110,110},20,0,EnemyAttack); step(scene); check(player->health()==80,"enemy attack");
-    fire(scene,*player,{110,110},20,0,NeutralAttack); step(scene); check(player->health()==60,"neutral player");
-    fire(scene,*player,{310,310},20,0,NeutralAttack); step(scene); check(enemy->health()==80,"neutral enemy");
+    step(host); check(enemy->health()==100 && !zero->is_destroyed(), "zero keeps projectile");
+    fire(scene,*player,{110,110}); step(host); check(player->health()==100,"friendly ignored");
+    fire(scene,*enemy,{110,110},20,0,EnemyAttack); step(host); check(player->health()==80,"enemy attack");
+    fire(scene,*player,{110,110},20,0,NeutralAttack); step(host); check(player->health()==60,"neutral player");
+    fire(scene,*player,{310,310},20,0,NeutralAttack); step(host); check(enemy->health()==80,"neutral enemy");
 }
 void growth_pause_and_queue()
 {
-    TestScene scene;
+    test::SceneHarness<TestScene> host;
+    TestScene& scene = host.scene();
     auto* source = scene.create_and_add_object<PlayerCharacter>(elysia::core::Vector2{500,500});
     auto* enemy = scene.create_and_add_object<::Enemy>(elysia::core::Vector2{100,100});
     Bullet_Attributes a;
@@ -121,8 +137,8 @@ void growth_pause_and_queue()
     a.behavior_appenders.push_back([](auto& set) { set.add(std::make_unique<GrowthBehavior>(60)); });
     auto owned = std::make_unique<Bullet>(a); owned->set_instigator(source->actor_id());
     scene.add_object(std::move(owned));
-    scene.pause(); scene.on_update(1); check(enemy->health()==100, "pause prevents hits");
-    scene.resume(); step(scene); check(std::abs(enemy->health()-89)<0.001f, "growth at impact");
+    scene.pause(); host.update(1); check(enemy->health()==100, "pause prevents hits");
+    scene.resume(); step(host); check(std::abs(enemy->health()-89)<0.001f, "growth at impact");
     ProjectileManager manager; manager.bind_scene(scene,scene.physics_world());
     ShotDescriptor delayed; delayed.spawn_delay_sec=1;
     check(manager.enqueue_fire_request({source->actor_id(),source->physics_handle(),{delayed}}), "queue before death");
@@ -130,20 +146,24 @@ void growth_pause_and_queue()
     source->receive_attack({0,0,100});
     manager.update(0); check(manager.pending_count()==0,"dead source cancels queued shots");
     check(!manager.enqueue_fire_request({source->actor_id(),source->physics_handle(),{delayed}}),"dead source cannot fire");
-    scene.physics_world().teleport_object(surviving->physics_handle(),{110,110}); step(scene);
+    scene.physics_world().teleport_object(surviving->physics_handle(),{110,110}); step(host);
     check(enemy->health()==74,"dead source projectile still damages");
-    scene.on_exit(); step(scene);
+    host.leave();
+    host.enter({}, elysia::scene::SceneReloadMode::Reset);
+    step(host);
     check(scene.physics_world().registered_object_count()==0,"exit clears directly created characters and bullets");
 }
 void lifecycle()
 {
-    TestScene scene;
-    for (int i=0;i<3;++i) { scene.on_enter({}); scene.on_exit(); step(scene); }
-    scene.on_enter({});
-    auto bad = std::make_unique<Bullet>(Bullet_Attributes{});
-    auto* rejected = scene.add_object(std::move(bad));
-    check(rejected->is_destroyed(), "unowned bullet registration rejected");
-    step(scene);
+    test::SceneHarness<TestScene> host;
+    TestScene& scene = host.scene();
+    for (int i=0;i<3;++i) { host.enter(); host.leave(); step(host); }
+    host.enter();
+    bool rejected = false;
+    try { scene.add_object(std::make_unique<Bullet>(Bullet_Attributes{})); }
+    catch (const std::runtime_error&) { rejected = true; }
+    check(rejected, "unowned bullet registration rejected");
+    step(host);
 }
 int main()
 {

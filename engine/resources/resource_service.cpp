@@ -29,6 +29,11 @@ MIX_Audio* ResourceService::find_sound(std::string_view key) const
 	return ResourceManager::instance()->find_sound(key);
 }
 
+bool ResourceService::has_music(std::string_view key) const
+{
+    return ResourceManager::instance()->has_music(key);
+}
+
 MIX_Audio* ResourceService::find_music(std::string_view key) const
 {
 	return ResourceManager::instance()->find_music(key);

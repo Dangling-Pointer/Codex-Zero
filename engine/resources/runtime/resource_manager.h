@@ -63,6 +63,7 @@ private:
 	[[nodiscard]] MIX_Audio* find_sound(std::string_view key) const;
     [[nodiscard]] bool has_sound(std::string_view key) const;
 	[[nodiscard]] MIX_Audio* find_music(std::string_view key) const;
+    [[nodiscard]] bool has_music(std::string_view key) const;
 	[[nodiscard]] SDL_Texture* find_texture(std::string_view key) const;
 
 	TextureManager _texture_manager;

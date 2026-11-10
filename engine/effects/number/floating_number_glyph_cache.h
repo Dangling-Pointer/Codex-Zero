@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../effect_request_failure.h"
 #include "../../core/geometry/vector2.h"
 #include "../../core/render/color.h"
 
@@ -9,8 +10,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <memory>
-#include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -48,8 +49,8 @@ public:
         SDL_Renderer* renderer,
         TTF_Font* font,
         std::uint64_t font_generation) noexcept;
-    [[nodiscard]] std::optional<FloatingNumberGlyph> glyph(FloatingNumberColor color, char ch);
-    [[nodiscard]] std::optional<std::vector<FloatingNumberGlyph>> resolve(
+    [[nodiscard]] std::expected<FloatingNumberGlyph, EffectRequestFailure> glyph(FloatingNumberColor color, char ch);
+    [[nodiscard]] std::expected<std::vector<FloatingNumberGlyph>, EffectRequestFailure> resolve(
         std::string_view text,
         FloatingNumberColor color
     );
@@ -63,7 +64,7 @@ private:
     }
 
     [[nodiscard]] static elysia::core::Color color_value(FloatingNumberColor color) noexcept;
-    [[nodiscard]] std::optional<FloatingNumberGlyph> create_glyph(FloatingNumberColor color, char ch) const;
+    [[nodiscard]] std::expected<FloatingNumberGlyph, EffectRequestFailure> create_glyph(FloatingNumberColor color, char ch) const;
 
 private:
     std::array<std::unordered_map<char,FloatingNumberGlyph>,kColorCount> _glyphs;

@@ -1,7 +1,6 @@
 #include "animation_effect_factory.h"
 
 #include "../../animation/animation_service.h"
-#include "../../tools/logger.h"
 
 #include <algorithm>
 
@@ -60,18 +59,17 @@ elysia::core::Vector2 get_effect_top_left(
 }
 }
 
-std::unique_ptr<AnimationEffect> AnimationEffectFactory::create(
+std::expected<std::unique_ptr<AnimationEffect>, EffectRequestFailure> AnimationEffectFactory::create(
 	const AnimationEffectSpawnRequest& request,
 	const AnimationEffectDefinition& definition) const
 {
-	std::unique_ptr<elysia::animation::Animation> animation =
-		ELYSIA_ANIMATIONS->create_animation(definition.animation_key);
+	if (!ELYSIA_ANIMATIONS->find_definition(definition.animation_key))
+		return std::unexpected(make_effect_request_failure(EffectRequestError::MissingAnimation,
+			"Animation effect references missing animation: " + definition.animation_key, request.effect_key));
+	auto animation = ELYSIA_ANIMATIONS->create_animation(definition.animation_key);
 	if (!animation)
-	{
-		ELYSIA_LOG_WARN("effects","Create effect failed: animation creation failed: "
-			<< definition.animation_key);
-		return nullptr;
-	}
+		return std::unexpected(make_effect_request_failure(EffectRequestError::CreationFailed,
+			"Animation instance creation failed: " + definition.animation_key, request.effect_key));
 
 	const std::optional<elysia::core::Vector2> final_size =
 		resolve_effect_size(request,definition,*animation);

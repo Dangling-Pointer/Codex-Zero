@@ -13,11 +13,14 @@
 #include <optional>
 #include <variant>
 
+namespace elysia::scene { class SceneCameraRuntime; }
+
 namespace elysia::camera
 {
 class CameraManager final : public elysia::tools::Singleton<CameraManager>
 {
     friend class elysia::tools::Singleton<CameraManager>;
+    friend class elysia::scene::SceneCameraRuntime;
 
 public:
     [[nodiscard]] const Camera& camera(CameraSlot slot) const noexcept;
@@ -50,6 +53,9 @@ public:
     void reset_all() noexcept;
 
 private:
+    // Lifecycle-only synchronous cleanup; preserves the logical pose and configuration.
+    void clear_transient_effects(CameraSlotSet slots) noexcept;
+
     struct CameraRig
     {
         Camera camera;

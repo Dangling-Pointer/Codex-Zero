@@ -178,6 +178,11 @@ std::expected<void,ResourceFailure> AudioManager::store_music(
 	return {};
 }
 
+bool AudioManager::has_music(std::string_view key) const
+{
+    return !key.empty() && _music_pool.contains(std::string(key));
+}
+
 MIX_Audio* AudioManager::find_music(const std::string_view& key) const
 {
 	if (key.empty())

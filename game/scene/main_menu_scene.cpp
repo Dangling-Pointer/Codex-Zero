@@ -18,21 +18,6 @@
 
 #include <memory>
 
-void MainMenuScene::on_update(double delta)
-{
-    elysia::scene::Scene::on_update(delta);
-}
-
-void MainMenuScene::on_render(SDL_Renderer *renderer)
-{
-    elysia::scene::Scene::on_render(renderer);
-}
-
-void MainMenuScene::on_input(const elysia::input::RawInputFrame &input, const std::vector<elysia::input::RawInputEvent> &events)
-{
-    elysia::scene::Scene::on_input(input, events);
-}
-
 void MainMenuScene::on_enter(const elysia::scene::ScenePayload &payload)
 {
     (void)payload;
@@ -53,7 +38,7 @@ void MainMenuScene::on_exit()
     reset_exit_overlay();
 }
 
-void MainMenuScene::reset()
+void MainMenuScene::on_reset()
 {
     _has_entered = false;
     reset_exit_overlay();

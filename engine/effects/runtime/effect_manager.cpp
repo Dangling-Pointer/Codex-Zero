@@ -4,39 +4,42 @@
 #include "../../scene/scene.h"
 #include "../../resources/resource_service.h"
 #include "../../core/time.h"
-#include "../../tools/logger.h"
 
 namespace elysia::effects
 {
-std::optional<ScreenEffectHandle> EffectManager::dispatch(const ScreenColorEffectRequest& request)
+std::expected<ScreenEffectHandle, EffectRequestFailure> EffectManager::dispatch(const ScreenColorEffectRequest& request)
 {
-    auto handle = _screen_effects.create(request, _active_scene, elysia::core::Time::instance()->frame_count());
-    if (!handle) ELYSIA_LOG_WARN("effects", "Screen color effect rejected: no active scene or invalid playback parameters.");
-    return handle;
+    return _screen_effects.create(request, _active_scene, elysia::core::Time::instance()->frame_count());
 }
-std::optional<ScreenEffectHandle> EffectManager::dispatch(const ScreenImageEffectRequest& request)
+
+std::expected<ScreenEffectHandle, EffectRequestFailure> EffectManager::dispatch(const ScreenImageEffectRequest& request)
 {
-    auto handle = _screen_effects.create(request, ELYSIA_RESOURCES->find_texture(request.texture_key), _active_scene,
+    if (!_active_scene)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::NoActiveScene,
+            "Screen image effect requires an active scene.", request.texture_key));
+    return _screen_effects.create(request, ELYSIA_RESOURCES->find_texture(request.texture_key), _active_scene,
         elysia::core::Time::instance()->frame_count());
-    if (!handle) ELYSIA_LOG_WARN("effects", "Screen image effect rejected: no active scene, invalid parameters or missing texture: " << request.texture_key);
-    return handle;
 }
-std::optional<ScreenEffectHandle> EffectManager::dispatch(const ScreenAnimationEffectRequest& request)
+
+std::expected<ScreenEffectHandle, EffectRequestFailure> EffectManager::dispatch(const ScreenAnimationEffectRequest& request)
 {
+    if (!_active_scene)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::NoActiveScene,
+            "Screen animation effect requires an active scene.", request.effect_key));
     const auto* effect = find_animation_effect_definition(request.effect_key);
-    const auto* definition = effect ? ELYSIA_ANIMATIONS->find_definition(effect->animation_key) : nullptr;
-    if (!_active_scene || !definition)
-    {
-        ELYSIA_LOG_WARN("effects", "Screen animation effect rejected: no active scene or missing effect/animation: " << request.effect_key);
-        return {};
-    }
+    if (!effect)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::MissingEffectDefinition,
+            "Screen animation effect definition does not exist.", request.effect_key));
+    const auto* definition = ELYSIA_ANIMATIONS->find_definition(effect->animation_key);
+    if (!definition)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::MissingAnimation,
+            "Screen animation effect references missing animation: " + effect->animation_key, request.effect_key));
     auto animation = ELYSIA_ANIMATIONS->create_animation(effect->animation_key);
-    auto handle = _screen_effects.create(request, std::move(animation), *definition,
+    return _screen_effects.create(request, std::move(animation), *definition,
         effect->default_size, request.angle_degrees.value_or(effect->angle_degrees), _active_scene,
         elysia::core::Time::instance()->frame_count());
-    if (!handle) ELYSIA_LOG_WARN("effects", "Screen animation effect rejected: invalid playback, layout or atlas frames: " << request.effect_key);
-    return handle;
 }
+
 void EffectManager::set_runtime_dependencies(
 	SDL_Renderer* renderer,
 	const elysia::typography::FontResolver* font_resolver) noexcept
@@ -107,53 +110,36 @@ const AnimationEffectDefinition* EffectManager::find_animation_effect_definition
 	return &iterator->second;
 }
 
-bool EffectManager::dispatch(const AnimationEffectSpawnRequest& request)
+std::expected<void, EffectRequestFailure> EffectManager::dispatch(const AnimationEffectSpawnRequest& request)
 {
-	if (!_active_scene)
-	{
-		ELYSIA_LOG_WARN("effects","Spawn animation effect failed: there is no active scene.");
-		return false;
-	}
-
-	const AnimationEffectDefinition* definition =
-		find_animation_effect_definition(request.effect_key);
-	if (!definition)
-	{
-		ELYSIA_LOG_WARN("effects","Create effect failed: definition does not exist: "
-			<< request.effect_key);
-		return false;
-	}
-
-	std::unique_ptr<AnimationEffect> effect =
-		_animation_effect_factory.create(request,*definition);
-	if (!effect)
-		return false;
-
-	if (_active_scene->add_object(std::move(effect)))
-		return true;
-
-	ELYSIA_LOG_WARN("effects","Spawn animation effect failed: active scene rejected the effect.");
-	return false;
+    if (!_active_scene)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::NoActiveScene,
+            "Animation effect requires an active scene.", request.effect_key));
+    const auto* definition = find_animation_effect_definition(request.effect_key);
+    if (!definition)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::MissingEffectDefinition,
+            "Animation effect definition does not exist.", request.effect_key));
+    auto effect = _animation_effect_factory.create(request, *definition);
+    if (!effect)
+        return std::unexpected(std::move(effect.error()));
+    if (!_active_scene->add_object(std::move(*effect)))
+        return std::unexpected(make_effect_request_failure(EffectRequestError::SceneRejected,
+            "Active scene rejected the animation effect.", request.effect_key));
+    return {};
 }
 
-bool EffectManager::dispatch(const FloatingNumberEffectSpawnRequest& request)
+std::expected<void, EffectRequestFailure> EffectManager::dispatch(const FloatingNumberEffectSpawnRequest& request)
 {
-	if (!_active_scene)
-	{
-		ELYSIA_LOG_WARN("effects","Spawn floating number effect failed: there is no active scene.");
-		return false;
-	}
-
-	std::unique_ptr<FloatingNumberEffect> effect =
-		_floating_number_effect_factory.create(request);
-	if (!effect)
-		return false;
-
-	if (_active_scene->add_object(std::move(effect)))
-		return true;
-
-	ELYSIA_LOG_WARN("effects","Spawn floating number effect failed: active scene rejected the effect.");
-	return false;
+    if (!_active_scene)
+        return std::unexpected(make_effect_request_failure(EffectRequestError::NoActiveScene,
+            "Floating number effect requires an active scene."));
+    auto effect = _floating_number_effect_factory.create(request);
+    if (!effect)
+        return std::unexpected(std::move(effect.error()));
+    if (!_active_scene->add_object(std::move(*effect)))
+        return std::unexpected(make_effect_request_failure(EffectRequestError::SceneRejected,
+            "Active scene rejected the floating number effect."));
+    return {};
 }
 
 void EffectManager::clear_content() noexcept

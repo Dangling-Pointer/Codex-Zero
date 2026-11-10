@@ -20,6 +20,6 @@ struct SceneRuntimeFeatures
     std::optional<FixedStepConfig> fixed_step;
     std::optional<elysia::physics::PhysicsWorldConfig> physics;
     std::optional<CameraSceneConfig> camera;
-    std::optional<SceneAudioConfig> audio;
+    SceneAudioConfig audio{};
 };
 } // namespace elysia::scene

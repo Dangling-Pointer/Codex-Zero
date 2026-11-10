@@ -377,10 +377,8 @@ void GameplayCollisionRuntime::on_collision_event(
             if (hit == _hit_boxes.end())
                 return;
             const HitBoxBinding hit_value = hit->second;
-            const auto instigator = _rigs.find(hit_value.instigator);
-            if (instigator == _rigs.end() || instigator->second.team == InvalidTeamId
-                || team_relation(instigator->second.team, hurt_binding.team)
-                    != TeamRelation::Hostile)
+            if (team_relation(hit_value.collider.team, hurt_binding.team)
+                != TeamRelation::Hostile)
                 return;
             const AttackHitKey key{hit_value.attack_instance, hurt_binding.owner};
             if (!_attack_hits.insert(key).second)
