@@ -29,4 +29,5 @@ struct Room
     std::vector<RoomID> neighbors{};
     bool discovered = false;
     bool visited = false;
+    bool cleared = false;
 };

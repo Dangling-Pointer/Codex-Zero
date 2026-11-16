@@ -1,4 +1,14 @@
 {
+  "floor_map": {
+    "start": "起点",
+    "end": "出口",
+    "combat": "战斗",
+    "elite": "精英",
+    "shop": "商店",
+    "event": "事件",
+    "rest": "休息",
+    "room": "房间"
+  },
   "common": {
     "save": "保存",
     "back": "返回",
@@ -8,6 +18,8 @@
     "coming_soon": "即将推出"
   },
   "menu_scene": {
+    "test": "测试",
+    "start": "开始",
     "project_name": "Elysia Engine",
     "demo_gallery": "演示库",
     "settings": "设置",

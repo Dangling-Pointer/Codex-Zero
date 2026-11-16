@@ -3,9 +3,8 @@
 #include "tile_data.h"
 #include "tile_map.h"
 
-int random_value(int min_value, int max_value);
-
 #include "../../engine/core/geometry/rect.h"
+#include "engine/tools/random_generator.h"
 
 enum class Side
 {
@@ -25,6 +24,7 @@ public:
     void clearGrid();
 
 private:
+    int random_value(int min_value, int max_value);
     void initGrid();
 
     elysia::core::Rect buildBaseRoom();
@@ -42,4 +42,5 @@ private:
     TileMap &grid;
 
     MapConfig config;
+    elysia::tools::RandomGenerator _random;
 };

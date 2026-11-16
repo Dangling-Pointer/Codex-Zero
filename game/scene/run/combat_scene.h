@@ -6,6 +6,7 @@ class CombatScene : public RoomScene
 protected:
     RoomBuildResult build_room(const RoomBuildConfig& config) override;
     void create_room_content() override;
+    [[nodiscard]] bool can_leave_room() const override;
 private:
     // Used only during room construction; Scene owns the map.
     DungeonRoom* _map = nullptr;

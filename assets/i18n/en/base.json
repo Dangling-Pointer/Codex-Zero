@@ -1,4 +1,14 @@
 {
+  "floor_map": {
+    "start": "Start",
+    "end": "Exit",
+    "combat": "Battle",
+    "elite": "Elite",
+    "shop": "Shop",
+    "event": "Event",
+    "rest": "Rest",
+    "room": "Room"
+  },
   "common": {
     "save": "Save",
     "back": "Back",
@@ -8,6 +18,7 @@
     "coming_soon": "Coming soon"
   },
   "menu_scene": {
+    "test": "Test",
     "project_name": "Codex Zero",
     "start": "Start",
     "settings": "Settings",

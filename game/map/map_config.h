@@ -1,6 +1,8 @@
 #pragma once
 
 #include "../../engine/core/geometry/vector2.h"
+#include <cstdint>
+#include <optional>
 
 // Base config dont delete
 struct MapConfig
@@ -13,4 +15,5 @@ struct MapConfig
 
     // No lower than 2
     int minGap = 3;
+    std::optional<std::uint64_t> seed;
 };

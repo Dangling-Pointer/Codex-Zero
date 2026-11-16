@@ -1,5 +1,5 @@
 #include "scene_harness.h"
-#include "game/scene/combat_scene.h"
+#include "game/scene/run/combat_scene.h"
 #include "game/combat/projectiles/bullet.h"
 #include "game/characters/character_manager.h"
 #include "game/map/dungeon_room.h"

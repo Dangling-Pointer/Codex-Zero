@@ -1,4 +1,14 @@
 {
+  "floor_map": {
+    "start": "開始",
+    "end": "出口",
+    "combat": "戦闘",
+    "elite": "精鋭",
+    "shop": "ショップ",
+    "event": "イベント",
+    "rest": "休息",
+    "room": "部屋"
+  },
   "common": {
     "save": "保存",
     "back": "戻る",
@@ -8,6 +18,8 @@
     "coming_soon": "近日公開"
   },
   "menu_scene": {
+    "test": "テスト",
+    "start": "スタート",
     "project_name": "Elysia Engine",
     "demo_gallery": "デモギャラリー",
     "settings": "設定",

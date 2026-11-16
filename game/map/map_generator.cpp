@@ -2,16 +2,14 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
-#include <ctime>
 #include <utility>
 
-int random_value(int min_value, int max_value)
+int MapGenerator::random_value(int min_value, int max_value)
 {
     if (max_value < min_value)
         std::swap(min_value, max_value);
 
-    return min_value + (std::rand() % (max_value - min_value + 1));
+    return _random.int_inclusive(min_value, max_value);
 }
 
 MapGenerator::MapGenerator(const elysia::core::Vector2 gridDimensions, MapConfig config, TileMap &grid)
@@ -19,7 +17,9 @@ MapGenerator::MapGenerator(const elysia::core::Vector2 gridDimensions, MapConfig
           static_cast<float>(std::max(1, static_cast<int>(std::floor(gridDimensions.x)))),
           static_cast<float>(std::max(1, static_cast<int>(std::floor(gridDimensions.y))))},
       grid(grid),
-      config(config)
+      config(config),
+      _random(config.seed ? elysia::tools::RandomGenerator{*config.seed}
+                          : elysia::tools::RandomGenerator{})
 {
     config.baseRoomSize.x = std::clamp(config.baseRoomSize.x, 1.0f, _gridDimensions.x);
     config.baseRoomSize.y = std::clamp(config.baseRoomSize.y, 1.0f, _gridDimensions.y);
@@ -28,18 +28,14 @@ MapGenerator::MapGenerator(const elysia::core::Vector2 gridDimensions, MapConfig
     config.numSubRooms = std::max(0, config.numSubRooms);
     config.minGap = std::max(0, config.minGap);
     this->config = config;
-    static bool seeded = false;
-    if (!seeded)
-    {
-        std::srand(static_cast<unsigned int>(std::time(nullptr)));
-        seeded = true;
-    }
-
     initGrid();
 }
 
 void MapGenerator::generateRoom()
 {
+    if (config.seed)
+        _random.set_seed(*config.seed);
+
     clearGrid();
 
     elysia::core::Rect base = buildBaseRoom();

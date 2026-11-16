@@ -35,6 +35,8 @@ protected:
     void on_shortcuts(const elysia::input::RawInputFrame&, const std::vector<elysia::input::RawInputEvent>& events) override;
     virtual RoomBuildResult build_room(const RoomBuildConfig& config) = 0;
     virtual void create_room_content() {}
+    [[nodiscard]] virtual bool can_leave_room() const { return true; }
+    [[nodiscard]] const Room* run_room() const;
     [[nodiscard]] PlayerCharacter* player() const noexcept { return _player; }
     [[nodiscard]] Portal* portal() const noexcept { return _portal; }
     [[nodiscard]] const RoomBuildConfig& room_config() const noexcept { return _config; }
@@ -46,9 +48,11 @@ protected:
 private:
     static void validate_payload(const RoomScenePayload& payload);
     void clear_room() noexcept;
+    void leave_through_portal();
 
 private:
-    bool _next_room_avalable = false;
+    std::optional<RoomID> _room_id;
+    std::optional<RoomID> _from_room;
     elysia::gameplay::ControllerHandle _player_controller;
     PlayerCharacter* _player = nullptr;
     Portal* _portal = nullptr;

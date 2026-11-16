@@ -3,6 +3,7 @@
 #include "../rune/behavior_rune.h"
 #include "../rune/stat_rune.h"
 #include "../rune/weapon_rune.h"
+#include "engine/tools/random_generator.h"
 
 #include <algorithm>
 #include <cmath>
@@ -129,7 +130,8 @@ float Wand::calc_circular_spread_angle(const WandAttributes &wand_attributes, in
 
 float Wand::calc_random_spread_angle(const WandAttributes &wand_attributes)
 {
-    float r = static_cast<float>(std::rand()) / RAND_MAX;
+    thread_local elysia::tools::RandomGenerator random;
+    const auto r = static_cast<float>(random.real(0.0, 1.0));
 
     float spread_degrees = wand_attributes.spread_degrees;
     return -spread_degrees * 0.5f + r * spread_degrees;

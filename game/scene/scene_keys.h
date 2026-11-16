@@ -5,3 +5,5 @@
 inline constexpr elysia::scene::SceneKey MainMenu = 2;
 inline constexpr elysia::scene::SceneKey Game = 3;
 inline constexpr elysia::scene::SceneKey CombatRoom = 4;
+inline constexpr elysia::scene::SceneKey FixedRoom = 5;
+inline constexpr elysia::scene::SceneKey FloorMap = 6;

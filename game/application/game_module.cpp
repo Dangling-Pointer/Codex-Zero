@@ -3,7 +3,9 @@
 #include "../scene/scene_keys.h"
 #include "../scene/main_menu_scene.h"
 #include "../scene/game_scene.h"
-#include "../scene/combat_scene.h"
+#include "../scene/run/combat_scene.h"
+#include "../scene/run/fixed_room_scene.h"
+#include "../scene/run/transition_scene.h"
 
 #include "../../engine/builtin/builtin_scene_keys.h"
 #include "../../engine/builtin/scenes/startup_loading_scene.h"
@@ -51,6 +53,8 @@ void GameModule::register_scenes(elysia::scene::SceneManager &scene_manager) con
     scene_manager.register_game_scene<MainMenuScene>(MainMenu);
     scene_manager.register_game_scene<GameScene>(Game);
     scene_manager.register_game_scene<CombatScene>(CombatRoom);
+    scene_manager.register_game_scene<FixedRoomScene>(FixedRoom);
+    scene_manager.register_game_scene<TransitionScene>(FloorMap);
 }
 
 std::unique_ptr<elysia::tools::IDevelopmentOverlay>

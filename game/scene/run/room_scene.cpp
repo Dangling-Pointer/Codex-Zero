@@ -1,7 +1,8 @@
 #include "room_scene.h"
-#include "gameplay_setup.h"
+#include "game/scene/gameplay_setup.h"
 #include "game/combat/player_fire.h"
-#include "scene_keys.h"
+#include "game/scene/scene_keys.h"
+#include "game/gameflow/game_flow_manager.h"
 
 #include "game/characters/player_character.h"
 #include "game/map/room_placement.h"
@@ -32,6 +33,20 @@ void RoomScene::validate_payload(const RoomScenePayload& payload)
         || !positive_dimensions(config.map_config.minSubRoomSize)
         || config.map_config.numSubRooms < 0 || config.map_config.minGap < 0)
         throw std::invalid_argument("Invalid room map configuration");
+
+    if (payload.room_id)
+    {
+        const auto& flow = *GameFlowManager::instance();
+        const auto* room = flow.find_room(*payload.room_id);
+        const auto current = flow.get_current_room_id();
+        const bool valid = payload.from_room
+            ? *payload.from_room == current && flow.can_enter_room(*payload.room_id)
+            : room && room->type == RoomType::Start && room->id == current;
+        if (!valid)
+            throw std::invalid_argument("Invalid dungeon room entry");
+    }
+    else if (payload.from_room)
+        throw std::invalid_argument("Dungeon room entry requires a destination");
 }
 
 RoomScene::RoomScene() : GameplayScene(game::room_features()) {}
@@ -46,6 +61,8 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
         return;
 
     _config = incoming->room;
+    _room_id = incoming->room_id;
+    _from_room = incoming->from_room;
     resume();
     try
     {
@@ -65,7 +82,7 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
             || portal_bounds.intersects(player_bounds))
             throw std::runtime_error("Room requires a walkable central portal and separate player spawn");
         _portal = create_and_add_object<Portal>(portal_bounds);
-        _portal->set_on_reached([] { ELYSIA_LOG_INFO("gameplay", "Room portal reached"); });
+        _portal->set_on_reached([this] { leave_through_portal(); });
 
         _player = create_and_add_object<PlayerCharacter>(_room.player_spawn, incoming->character);
         if (!_player || _player->is_destroyed())
@@ -106,11 +123,21 @@ void RoomScene::clear_room() noexcept
     _portal = nullptr;
     _room = {};
     _config = {};
+    _room_id.reset();
+    _from_room.reset();
     resume();
 }
 
 void RoomScene::on_before_update(double delta)
 {
+    // The first active update follows a successful SceneManager switch.
+    if (_from_room)
+    {
+        auto& flow = *GameFlowManager::instance();
+        if (flow.get_current_room_id() != *_from_room || !flow.try_enter_room(*_room_id))
+            throw std::logic_error("Dungeon room entry is no longer valid");
+        _from_room.reset();
+    }
     if (_active && !_paused)
         _projectiles.update(delta);
 }
@@ -118,8 +145,37 @@ void RoomScene::on_before_update(double delta)
 void RoomScene::on_after_update(double)
 {
     if (_active && _room.map && !_room.map->is_destroyed() && !is_paused() && _portal && _player
-        && !_player->is_destroyed() && _player->is_active() && !_player->is_dead())
+        && !_player->is_destroyed() && _player->is_active() && !_player->is_dead()
+        && can_leave_room())
         _portal->check_reached(_player->world_rect());
+}
+
+const Room* RoomScene::run_room() const
+{
+    return _room_id ? GameFlowManager::instance()->find_room(*_room_id) : nullptr;
+}
+
+void RoomScene::leave_through_portal()
+{
+    const auto* room = run_room();
+    if (!room)
+    {
+        ELYSIA_LOG_INFO("gameplay", "Room portal reached");
+        return;
+    }
+    if (room->type == RoomType::End)
+    {
+        request_scene_switch(MainMenu);
+        return;
+    }
+
+    const auto character = capture_character_context();
+    if (!character)
+        throw std::logic_error("Cannot leave a dungeon room without a player");
+
+    request_scene_switch(FloorMap, FloorMapPayload{room->id, *character});
+    if (room->type == RoomType::Combat || room->type == RoomType::Elite)
+        GameFlowManager::instance()->mark_current_room_cleared();
 }
 
 std::optional<CharacterContext> RoomScene::capture_character_context() const

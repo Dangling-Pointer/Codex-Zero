@@ -1,7 +1,9 @@
 #include "main_menu_scene.h"
 #include "scene_keys.h"
-#include "room_scene_payload.h"
+#include "run/room_scene_payload.h"
 #include "game/characters/character_manager.h"
+#include "game/gameflow/game_flow_manager.h"
+#include "engine/tools/random_generator.h"
 
 #include "../../engine/resources/resource_service.h"
 #include "../../engine/tools/logger.h"
@@ -16,6 +18,7 @@
 #include "../../engine/ui/containers/ui_list_container.h"
 #include "../../engine/ui/layout/ui_layout_types.h"
 
+#include <limits>
 #include <memory>
 
 void MainMenuScene::on_enter(const elysia::scene::ScenePayload &payload)
@@ -93,10 +96,20 @@ void MainMenuScene::build_menu_buttons()
     ui_button->set_text_content(
         elysia::ui::ui_text_key("menu_scene.start"));
     ui_button->set_sounds(menu_button_sounds);
-    ui_button->set_on_click([this]
-                            {
-            Scene::request_scene_switch(Game);
-            ELYSIA_LOG_DEBUG("MainMenuScene", "menu_scene.start button clicked"); });
+    ui_button->set_on_click([this] {
+        const auto character = CharacterManager::instance()->create_context("default_player");
+        if (!character)
+        {
+            ELYSIA_LOG_ERROR("MainMenuScene", "Cannot create default player context");
+            return;
+        }
+
+        elysia::tools::RandomGenerator random;
+        using Seed = elysia::tools::RandomGenerator::Seed;
+        auto& flow = *GameFlowManager::instance();
+        flow.restart(random.int_inclusive<Seed>(0, std::numeric_limits<Seed>::max()));
+        request_scene_switch(make_run_room_route(flow.get_current_room_id(), *character));
+    });
     ui_list->add_back(std::move(ui_button));
 
     // setting button
@@ -131,22 +144,10 @@ void MainMenuScene::build_menu_buttons()
                     _exit_confirmation->open(); });
     ui_list->add_back(std::move(ui_button));
 
-    //TEST USE
-    // game folow test button
     ui_button = std::make_unique<elysia::ui::UiButton>(elysia::core::Rect{ 0, 0, button_wide, button_hight });
-    ui_button->set_text_content(elysia::ui::ui_raw_text("game flow"));
+    ui_button->set_text_content(elysia::ui::ui_text_key("menu_scene.test"));
     ui_button->set_sounds(menu_button_sounds);
-    ui_button->set_on_click([this]
-        {
-            ELYSIA_LOG_DEBUG("MainMenuScene", "game flow test button");
-            const auto context = CharacterManager::instance()->create_context("default_player");
-            if (!context)
-            {
-                ELYSIA_LOG_ERROR("MainMenuScene", "Cannot create default player context");
-                return;
-            }
-            Scene::request_scene_switch(CombatRoom, RoomScenePayload{*context, {}});
-        });
+    ui_button->set_on_click([this] { request_scene_switch(Game); });
     _main_menu_window->add_child(std::move(ui_button), { ._anchor = elysia::ui::UiLayoutAnchor::TopRight });
 
 

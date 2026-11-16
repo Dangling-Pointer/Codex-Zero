@@ -5,9 +5,12 @@
 #include "game/characters/character_manager.h"
 #include "game/characters/player_character.h"
 #include "game/characters/enemy.h"
-#include "game/scene/combat_scene.h"
-#include "game/scene/game_scene.h"
+#include "game/application/game_module.h"
+#include "game/gameflow/game_flow_manager.h"
+#include "game/scene/run/combat_scene.h"
+#include "game/scene/scene_keys.h"
 #include "engine/core/render/render_command.h"
+#include "engine/object_query/game_object_query_service.h"
 
 #include <cmath>
 #include <iostream>
@@ -78,7 +81,7 @@ void placement()
     DungeonRoom map(config, {12, 12});
     map.set_position({128, -64});
     const auto portal = game::central_portal_bounds(map);
-    check(portal.center() == map.center() && portal.size() == Vector2{32, 32},
+    check(portal.center() == map.center() && portal.size() == game::kPortalSize,
           "central portal respects map origin");
     check(game::walkable_bounds(map, portal), "central portal on floor");
     const auto spawn = game::player_spawn_near_portal(map);
@@ -97,6 +100,169 @@ void placement()
     config.baseRoomSize = {2, 2};
     DungeonRoom blocked(config, {12, 12});
     rejects([&] { (void)game::player_spawn_near_portal(blocked); }, "blocked center rejected");
+}
+
+std::vector<TileType> layout(const DungeonRoom& map)
+{
+    std::vector<TileType> result;
+    for (const auto& row : map.tile_map().data())
+        for (const auto& tile : row)
+            result.push_back(tile.type);
+    return result;
+}
+
+void click(elysia::scene::SceneManager& manager, int x, int y)
+{
+    using namespace elysia::input;
+    RawInputState mouse;
+    for (const auto type : {RawInputEventType::ControlPressed, RawInputEventType::ControlReleased})
+    {
+        const RawInputEvent event{
+            .control = RawInputControl::MouseLeft,
+            .type = type,
+            .device = InputDevice::Mouse,
+            .mouse_x = x,
+            .mouse_y = y,
+            .source = InputSourceId::mouse(),
+        };
+        InputSnapshot snapshot;
+        snapshot.sources = {{.source = event.source, .initial_state = mouse}};
+        apply_raw_event(mouse, event);
+        snapshot.sources.front().frame.state = mouse;
+        snapshot.events = {event};
+        manager.on_input(snapshot);
+    }
+}
+
+void single_floor_run()
+{
+    using elysia::scene::SceneManager;
+    auto& flow = *GameFlowManager::instance();
+    const auto initial_character = *CharacterManager::instance()->create_context("default_player");
+    elysia::io::ContentRegistry content;
+    elysia::scene::SceneRuntimeContext context{nullptr, content, 1280, 720};
+    SceneManager manager;
+    manager.initialize(context);
+    GameModule{}.register_scenes(manager);
+    flow.restart(42);
+    manager.start(make_run_room_route(0, initial_character));
+    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 0,
+          "run opens the fixed starting room");
+    for (const auto& room : flow.rooms())
+        check(room.discovered == (room.id <= 4 || room.id == 13) && room.visited == (room.id == 0),
+              "initial fog shows the start, neighbors and exit");
+
+    const auto* query = ELYSIA_OBJECT_QUERY;
+    const auto* start_map = query->find_object<DungeonRoom>();
+    check(start_map && start_map->columns() == 12 && start_map->rows() == 10, "fixed room dimensions");
+    check(query->find_objects<Enemy>().empty(), "start room is safe");
+    const auto enter_portal = [&] {
+        auto* player = query->find_object<PlayerCharacter>();
+        const auto* portal = query->find_object<Portal>();
+        check(player && portal, "active room has a player and portal");
+        player->set_position(portal->position());
+        manager.on_update(0);
+    };
+    enter_portal();
+    check(manager.current_scene_key() == FloorMap, "start portal opens the map");
+    click(manager, 1025, 307);
+    click(manager, 717, 307);
+    check(manager.current_scene_key() == FloorMap && flow.get_current_room_id() == 0,
+          "disabled exit and hidden nodes do not request a route");
+
+    click(manager, 563, 307);
+    check(manager.current_scene_key() == CombatRoom && flow.get_current_room_id() == 0,
+          "selection loads the battle room before committing movement");
+    manager.on_update(0);
+    check(flow.get_current_room_id() == 1 && flow.find_room(5)->discovered && !flow.find_room(5)->visited,
+          "active room commits the move and reveals its neighbors");
+    const auto* first_map = query->find_object<DungeonRoom>();
+    check(first_map != nullptr, "combat room has a map");
+    const auto first_layout = layout(*first_map);
+    const auto enemies = query->find_objects<Enemy>();
+    check(!enemies.empty(), "first visit spawns enemies");
+    enter_portal();
+    check(manager.current_scene_key() == CombatRoom && !query->find_object<Portal>()->is_reached(),
+          "living enemies block the portal without consuming it");
+    auto* player = query->find_object<PlayerCharacter>();
+    player->receive_attack({0, 0, 10});
+    const float health = player->health();
+    check(health < initial_character.health && health > 0, "test damaged the player");
+    for (auto* enemy : enemies)
+        enemy->receive_attack({0, 0, enemy->max_health()});
+    manager.on_update(0);
+    check(manager.current_scene_key() == FloorMap && flow.find_room(1)->cleared,
+          "defeated enemies enable the portal and mark the room cleared");
+    click(manager, 563, 413);
+    manager.on_update(0);
+    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 0,
+          "visited start can be reentered");
+    check(query->find_object<PlayerCharacter>()->health() == health, "health survives scene transitions");
+    enter_portal();
+    click(manager, 563, 307);
+    manager.on_update(0);
+    check(manager.current_scene_key() == CombatRoom && flow.get_current_room_id() == 1,
+          "cleared combat room remains selectable");
+    check(query->find_objects<Enemy>().empty(), "cleared combat does not respawn enemies");
+    check(layout(*query->find_object<DungeonRoom>()) == first_layout, "revisit retains seeded terrain");
+
+    enter_portal();
+    click(manager, 717, 307);
+    manager.on_update(0);
+    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 5, "event uses a fixed room");
+    enter_portal();
+    check(flow.find_room(9)->discovered && !flow.find_room(9)->visited, "room 9 is visible but unvisited");
+    click(manager, 563, 201); // A discovered room beyond the current neighbors.
+    click(manager, 717, 307); // The current room.
+    check(manager.current_scene_key() == FloorMap && flow.get_current_room_id() == 5,
+          "unvisited non-neighbor and current room remain disabled");
+
+    click(manager, 563, 413);
+    manager.on_update(0);
+    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 0
+        && query->find_object<PlayerCharacter>()->health() == health,
+        "visited non-neighbor can be selected directly with player state intact");
+    enter_portal();
+    click(manager, 717, 307);
+    manager.on_update(0);
+    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 5,
+          "fast travel works in both directions between visited rooms");
+    enter_portal();
+    click(manager, 871, 307);
+    manager.on_update(0);
+    check(manager.current_scene_key() == CombatRoom && flow.get_current_room_id() == 6, "elite routes to combat");
+    for (auto* enemy : query->find_objects<Enemy>())
+        enemy->receive_attack({0, 0, enemy->max_health()});
+    enter_portal();
+    click(manager, 1025, 307);
+    manager.on_update(0);
+    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 13, "route reaches the exit");
+    enter_portal();
+    check(manager.current_scene_key() == MainMenu, "exit portal returns directly to the main menu");
+
+    click(manager, 1155, 38); // Top-right test entry.
+    check(manager.current_scene_key() == Game && flow.get_current_room_id() == 13,
+          "menu test launches GameScene outside the run");
+    manager.on_scene_request({elysia::scene::SceneRequestType::Switch, {.target = MainMenu}});
+    manager.on_update(0);
+    click(manager, 640, 281); // Start below the logo.
+    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 0
+        && !flow.find_room(1)->cleared && !flow.find_room(5)->discovered,
+        "menu Start creates a fresh run");
+
+    flow.restart(43);
+    check(flow.get_current_room_id() == 0 && flow.room_seed(1) == 44 && !flow.find_room(1)->cleared
+        && !flow.find_room(5)->discovered, "restart resets clears, fog and seed");
+
+    auto failed_route = make_run_room_route(1, initial_character, 0);
+    auto room = *elysia::scene::try_scene_payload<RoomScenePayload>(failed_route.payload);
+    room.room.map_config.baseRoomSize = {2, 2};
+    room.room.map_config.numSubRooms = 0;
+    failed_route.payload = room;
+    manager.on_scene_request({elysia::scene::SceneRequestType::Switch, failed_route});
+    manager.on_update(0);
+    check(manager.current_scene_key() != CombatRoom && flow.get_current_room_id() == 0
+        && !flow.find_room(1)->visited && !flow.find_room(5)->discovered, "failed room load leaves exploration untouched");
 }
 
 template<class T> std::vector<T*> objects(elysia::scene::Scene& scene)
@@ -128,7 +294,7 @@ template<class T> void room_portal(const elysia::scene::ScenePayload& payload = 
         auto* player = players.front();
         auto* map = maps.front();
         const auto initial_player = player->world_rect();
-        check(portal->center() == map->center() && portal->size() == Vector2{32, 32}, "portal at map center");
+        check(portal->center() == map->center() && portal->size() == game::kPortalSize, "portal at map center");
         check(game::walkable_bounds(*map, initial_player)
             && !portal->world_rect().intersects(initial_player), "safe player spawn");
         for (auto* enemy : objects<Enemy>(scene))
@@ -186,9 +352,9 @@ int main()
     {
         portal_trigger();
         placement();
-        room_portal<GameScene>();
         room_portal<CombatScene>(RoomScenePayload{
             *CharacterManager::instance()->create_context("default_player"), {}});
+        single_floor_run();
         std::cout << "Portal tests passed\n";
         return 0;
     }

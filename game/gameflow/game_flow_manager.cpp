@@ -49,12 +49,14 @@ GameFlowManager::GameFlowManager() : _rooms(make_fixed_rooms())
     restart();
 }
 
-void GameFlowManager::restart() noexcept
+void GameFlowManager::restart(std::uint64_t run_seed) noexcept
 {
+    _run_seed = run_seed;
     for (auto& room : _rooms)
     {
         room.discovered = false;
         room.visited = false;
+        room.cleared = false;
     }
     _rooms[end_room_id].discovered = true;
     visit_room(start_room_id);
@@ -90,14 +92,33 @@ const Room* GameFlowManager::find_room(RoomID room_id) const noexcept
     return room_id < _rooms.size() ? &_rooms[room_id] : nullptr;
 }
 
+bool GameFlowManager::can_enter_room(RoomID room_id) const noexcept
+{
+    const auto* target = find_room(room_id);
+    if (!target || room_id == _current_room)
+        return false;
+
+    const auto& neighbors = _rooms[_current_room].neighbors;
+    return target->visited || std::ranges::find(neighbors, room_id) != neighbors.end();
+}
+
 bool GameFlowManager::try_enter_room(RoomID room_id) noexcept
 {
-    const auto& neighbors = _rooms[_current_room].neighbors;
-    if (std::ranges::find(neighbors, room_id) == neighbors.end())
+    if (!can_enter_room(room_id))
         return false;
 
     visit_room(room_id);
     return true;
+}
+
+std::uint64_t GameFlowManager::room_seed(RoomID room_id) const noexcept
+{
+    return _run_seed + room_id;
+}
+
+void GameFlowManager::mark_current_room_cleared() noexcept
+{
+    _rooms[_current_room].cleared = true;
 }
 
 void GameFlowManager::visit_room(RoomID room_id) noexcept

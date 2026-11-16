@@ -16,7 +16,7 @@
 #include "game/characters/enemy.h"
 #include "game/characters/player_character.h"
 #include "game/scene/game_scene.h"
-#include "game/scene/combat_scene.h"
+#include "game/scene/run/combat_scene.h"
 #include "game/characters/character_manager.h"
 #include "game/input/game_actions.h"
 #include "game/input/game_input_map.h"

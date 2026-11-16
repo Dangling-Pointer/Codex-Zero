@@ -14,9 +14,13 @@ RoomBuildResult CombatScene::build_room(const RoomBuildConfig& config)
 }
 void CombatScene::create_room_content()
 {
+    const auto* room = run_room();
+    if (room && room->cleared)
+        return;
+
     EnemyGenerator generator;
     EnemyGenerator::Config config;
-    config.difficulty = 5.0f;
+    config.difficulty = room && room->type == RoomType::Elite ? 6.0f : 5.0f;
     config.base_budget = 5.0f;
     const auto purchases = generator.generate(config);
     const auto spawns = EnemySpawnLayout{}.map(purchases.purchases, _map->center());
@@ -29,4 +33,19 @@ void CombatScene::create_room_content()
         add_object(std::move(enemy));
         occupied.push_back(bounds);
     }
+}
+
+bool CombatScene::can_leave_room() const
+{
+    if (!run_room())
+        return true;
+
+    bool enemies_remaining = false;
+    static_cast<const elysia::object_query::IGameObjectQueryRuntime&>(*this)
+        .visit_game_objects(elysia::core::DepthLayerMask::all(), [&](const auto& object) {
+            const auto* enemy = dynamic_cast<const Enemy*>(&object);
+            enemies_remaining = enemy && !enemy->is_destroyed() && !enemy->is_dead();
+            return !enemies_remaining;
+        });
+    return !enemies_remaining;
 }
