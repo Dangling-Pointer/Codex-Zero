@@ -22,11 +22,15 @@ enum class RoomType : std::uint8_t
 
 struct Room
 {
+    //info
     RoomID id = 0;
     RoomType type = RoomType::NONE;
+
+    //pos
     int x = 0;
     int y = 0;
     std::vector<RoomID> neighbors{};
+
     bool discovered = false;
     bool visited = false;
     bool cleared = false;

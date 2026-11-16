@@ -16,6 +16,7 @@ namespace
 using elysia::core::Rect;
 using elysia::core::Vector2;
 using elysia::ui::UiButton;
+using elysia::ui::UiButtonStyleOverrides;
 using elysia::ui::UiLayoutChildOptions;
 using elysia::ui::UiWindow;
 
@@ -55,6 +56,35 @@ std::string_view room_label_key(RoomType type)
     default: return "floor_map.room";
     }
 }
+
+UiButtonStyleOverrides room_button_style(const Room& room, bool is_current_room)
+{
+    using namespace elysia::core::colors;
+
+    UiButtonStyleOverrides style;
+    if (is_current_room)
+    {
+        style.chrome.background.disabled = blue_700;
+        style.chrome.border.disabled = blue_300;
+        style.text.disabled = white;
+    }
+    else if (room.visited)
+    {
+        style.chrome.background.idle = brown_700;
+        style.chrome.background.focused = brown_500;
+        style.chrome.background.active = brown_700;
+        style.chrome.border.idle = orange_300;
+        style.chrome.border.focused = yellow_300;
+        style.chrome.border.active = orange_500;
+        style.text.enabled = white;
+    }
+    else if (room.type == RoomType::End)
+    {
+        style.chrome.border.disabled = green_500;
+        style.text.disabled = green_300;
+    }
+    return style;
+}
 }
 
 void TransitionScene::on_enter(const elysia::scene::ScenePayload& payload)
@@ -85,14 +115,16 @@ void TransitionScene::build_map()
 
     const float columns = static_cast<float>(right->x - left->x + 1);
     const float rows = static_cast<float>(bottom->y - top->y + 1);
-    const Vector2 spacing{std::min(154.0f, width / (columns + 1)),
-                          std::min(106.0f, height / (rows + 1))};
+    const Vector2 spacing{
+        std::min(154.0f, width / (columns + 1)),
+        std::min(106.0f, height / (rows + 1)),
+    };
     const Vector2 button_size{spacing.x * 0.82f, spacing.y * 0.45f};
     const float center_x = (left->x + right->x) * 0.5f;
     const float center_y = (top->y + bottom->y) * 0.5f;
     const auto button_center = [&](const Room& room) {
-        return viewport.center() + Vector2{(room.x - center_x) * spacing.x,
-                                           (room.y - center_y) * spacing.y};
+        const Vector2 offset{(room.x - center_x) * spacing.x, (room.y - center_y) * spacing.y};
+        return viewport.center() + offset;
     };
 
     std::vector<MapConnections::Edge> edges;
@@ -102,7 +134,7 @@ void TransitionScene::build_map()
             continue;
         for (const RoomID id : room.neighbors)
         {
-            if (id <= room.id)
+            if (id <= room.id) // Draw each undirected connection once.
                 continue;
             const auto& neighbor = *flow.find_room(id);
             if (neighbor.discovered && (room.visited || neighbor.visited))
@@ -111,32 +143,25 @@ void TransitionScene::build_map()
     }
     _window->create_child<MapConnections>(viewport, std::move(edges));
 
+    const auto current_room = flow.get_current_room_id();
     for (const auto& room : rooms)
     {
         if (!room.discovered)
             continue;
+
         const auto rect = Rect::from_center(button_center(room), button_size);
         const UiLayoutChildOptions layout{._margin = {.left = rect.x(), .top = rect.y()}};
         auto* button = _window->create_child<UiButton>(layout, Rect{{}, button_size}, 1);
-        auto label = room.id < 10 ? "0" + std::to_string(room.id) : std::to_string(room.id);
+
+        auto label = std::to_string(room.id);
+        if (room.id < 10)
+            label.insert(label.begin(), '0');
         label += ' ';
         label += ELYSIA_LOCALIZATION->tr(room_label_key(room.type));
+
         button->set_text_content(elysia::ui::ui_raw_text(std::move(label)));
         button->set_enabled(flow.can_enter_room(room.id));
-
-        elysia::ui::UiButtonStyleOverrides style;
-        if (room.id == flow.get_current_room_id())
-        {
-            style.chrome.background.disabled = elysia::core::colors::blue_700;
-            style.chrome.border.disabled = elysia::core::colors::blue_300;
-            style.text.disabled = elysia::core::colors::white;
-        }
-        else if (room.type == RoomType::End)
-        {
-            style.chrome.border.disabled = elysia::core::colors::green_500;
-            style.text.disabled = elysia::core::colors::green_300;
-        }
-        button->set_style_overrides(style);
+        button->set_style_overrides(room_button_style(room, room.id == current_room));
         button->set_on_click([this, id = room.id] { choose_room(id); });
     }
     _window->set_on_cancel([this] { return_to_menu(); });
@@ -153,9 +178,11 @@ void TransitionScene::clear_map() noexcept
 
 void TransitionScene::choose_room(RoomID room_id)
 {
+    if (_route_requested || !_entry)
+        return;
+
     const auto& flow = *GameFlowManager::instance();
-    if (_route_requested || !_entry || _entry->from_room != flow.get_current_room_id()
-        || !flow.can_enter_room(room_id))
+    if (_entry->from_room != flow.get_current_room_id() || !flow.can_enter_room(room_id))
         return;
 
     request_scene_switch(make_run_room_route(room_id, _entry->character, _entry->from_room));
@@ -170,17 +197,17 @@ void TransitionScene::return_to_menu()
     _route_requested = true;
 }
 
-void TransitionScene::on_shortcuts(const elysia::input::RawInputFrame&,
-                                    const std::vector<elysia::input::RawInputEvent>& events)
+void TransitionScene::on_shortcuts(
+    const elysia::input::RawInputFrame&, const std::vector<elysia::input::RawInputEvent>& events)
 {
     for (const auto& event : events)
     {
-        if (event.type == elysia::input::RawInputEventType::ControlPressed
-            && event.control == elysia::input::RawInputControl::KeyEscape)
-        {
-            consume_input(event);
-            return_to_menu();
-            return;
-        }
+        if (event.type != elysia::input::RawInputEventType::ControlPressed
+            || event.control != elysia::input::RawInputControl::KeyEscape)
+            continue;
+
+        consume_input(event);
+        return_to_menu();
+        return;
     }
 }

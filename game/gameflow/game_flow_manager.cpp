@@ -1,8 +1,11 @@
 #include "game_flow_manager.h"
 
+#include "engine/tools/logger.h"
+
 #include <algorithm>
 #include <utility>
 
+//for testing
 namespace
 {
 constexpr RoomID start_room_id = 0;
@@ -43,6 +46,8 @@ std::array<Room, 14> make_fixed_rooms()
     return rooms;
 }
 }
+//for testing
+
 
 GameFlowManager::GameFlowManager() : _rooms(make_fixed_rooms())
 {
@@ -52,12 +57,16 @@ GameFlowManager::GameFlowManager() : _rooms(make_fixed_rooms())
 void GameFlowManager::restart(std::uint64_t run_seed) noexcept
 {
     _run_seed = run_seed;
+
+    ELYSIA_LOG_DEBUG("GameFlowManager", "start with seed: " << run_seed);
+
     for (auto& room : _rooms)
     {
         room.discovered = false;
         room.visited = false;
         room.cleared = false;
     }
+
     _rooms[end_room_id].discovered = true;
     visit_room(start_room_id);
 }
@@ -98,8 +107,10 @@ bool GameFlowManager::can_enter_room(RoomID room_id) const noexcept
     if (!target || room_id == _current_room)
         return false;
 
-    const auto& neighbors = _rooms[_current_room].neighbors;
-    return target->visited || std::ranges::find(neighbors, room_id) != neighbors.end();
+    // Each first visit extends the connected set of visited rooms by one edge.
+    return target->visited || std::ranges::any_of(target->neighbors, [this](RoomID neighbor) {
+        return _rooms[neighbor].visited;
+    });
 }
 
 bool GameFlowManager::try_enter_room(RoomID room_id) noexcept

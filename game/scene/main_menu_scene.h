@@ -1,16 +1,11 @@
 #pragma once
 
-#include "../../engine/scene/scene.h"
-
-#include "../../engine/ui/window/ui_window.h"
-
-#include <cstddef>
-#include <vector>
+#include "engine/scene/scene.h"
 
 namespace elysia::ui
 {
-    class UiButton;
-    class UiConfirmationDialog;
+class UiWindow;
+class UiConfirmationDialog;
 }
 
 struct MainMenuEnterPayload
@@ -24,17 +19,17 @@ public:
     MainMenuScene() = default;
     ~MainMenuScene() override = default;
 
-    void on_enter(const elysia::scene::ScenePayload &payload) override;
+    void on_enter(const elysia::scene::ScenePayload& payload) override;
     void on_exit() override;
     void on_reset() override;
 
 private:
     void build_menu_buttons();
+    void start_run();
     void reset_exit_overlay();
     void restore_menu_state();
 
-private:
     bool _has_entered = false;
-    elysia::ui::UiWindow *_main_menu_window = nullptr;
-    elysia::ui::UiConfirmationDialog *_exit_confirmation = nullptr;
+    elysia::ui::UiWindow* _main_menu_window = nullptr;
+    elysia::ui::UiConfirmationDialog* _exit_confirmation = nullptr;
 };

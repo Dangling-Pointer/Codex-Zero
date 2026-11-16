@@ -154,7 +154,7 @@ void single_floor_run()
 
     const auto* query = ELYSIA_OBJECT_QUERY;
     const auto* start_map = query->find_object<DungeonRoom>();
-    check(start_map && start_map->columns() == 12 && start_map->rows() == 10, "fixed room dimensions");
+    check(start_map && start_map->columns() == 15 && start_map->rows() == 15, "fixed start room dimensions");
     check(query->find_objects<Enemy>().empty(), "start room is safe");
     const auto enter_portal = [&] {
         auto* player = query->find_object<PlayerCharacter>();
@@ -211,11 +211,18 @@ void single_floor_run()
     manager.on_update(0);
     check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 5, "event uses a fixed room");
     enter_portal();
-    check(flow.find_room(9)->discovered && !flow.find_room(9)->visited, "room 9 is visible but unvisited");
-    click(manager, 563, 201); // A discovered room beyond the current neighbors.
+    click(manager, 1025, 307); // The visible exit is beyond unvisited rooms.
     click(manager, 717, 307); // The current room.
     check(manager.current_scene_key() == FloorMap && flow.get_current_room_id() == 5,
-          "unvisited non-neighbor and current room remain disabled");
+          "routes through unvisited rooms and the current room remain disabled");
+
+    check(flow.find_room(9)->discovered && !flow.find_room(9)->visited, "room 9 is visible but unvisited");
+    click(manager, 563, 201); // Room 9 is reachable through visited room 1.
+    manager.on_update(0);
+    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 9
+        && flow.find_room(9)->visited && query->find_object<PlayerCharacter>()->health() == health,
+        "reachable unexplored room can be selected through a visited room");
+    enter_portal();
 
     click(manager, 563, 413);
     manager.on_update(0);

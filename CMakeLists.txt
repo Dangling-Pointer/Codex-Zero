@@ -4,7 +4,7 @@ project(CodexZero LANGUAGES C CXX)
 # Uncomment this line if you don't want to build the tests.
 #option(BUILD_TESTING "Build tests" OFF)
 include(CTest)
-
+ 
 add_subdirectory(thirdparty/box2d EXCLUDE_FROM_ALL)
 add_subdirectory(thirdparty/enet EXCLUDE_FROM_ALL  )
 

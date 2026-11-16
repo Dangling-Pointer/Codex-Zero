@@ -32,33 +32,47 @@ public:
 
 protected:
     void on_game_fixed_update(std::uint64_t tick, double delta) override;
-    void on_shortcuts(const elysia::input::RawInputFrame&, const std::vector<elysia::input::RawInputEvent>& events) override;
+    void on_shortcuts(const elysia::input::RawInputFrame&,
+                      const std::vector<elysia::input::RawInputEvent>& events) override;
+
     virtual RoomBuildResult build_room(const RoomBuildConfig& config) = 0;
+
     virtual void create_room_content() {}
     [[nodiscard]] virtual bool can_leave_room() const { return true; }
+
     [[nodiscard]] const Room* run_room() const;
+
     [[nodiscard]] PlayerCharacter* player() const noexcept { return _player; }
     [[nodiscard]] Portal* portal() const noexcept { return _portal; }
     [[nodiscard]] const RoomBuildConfig& room_config() const noexcept { return _config; }
     [[nodiscard]] CombatSystem& combat_system() noexcept { return _combat; }
-    [[nodiscard]] std::optional<elysia::camera::CameraFocus> resolve_camera_focus(elysia::camera::CameraSlot slot) const override;
+
+    [[nodiscard]] std::optional<elysia::camera::CameraFocus> resolve_camera_focus(
+        elysia::camera::CameraSlot slot) const override;
+
     void on_scene_object_registered(elysia::core::SceneObject& object) override;
     void on_control_target_removing(elysia::core::SceneObject& object) override;
 
 private:
     static void validate_payload(const RoomScenePayload& payload);
+    void build_room_objects(const CharacterContext& character);
     void clear_room() noexcept;
     void leave_through_portal();
 
-private:
     std::optional<RoomID> _room_id;
     std::optional<RoomID> _from_room;
+
     elysia::gameplay::ControllerHandle _player_controller;
     PlayerCharacter* _player = nullptr;
+
+    bool _active_portal = false;
     Portal* _portal = nullptr;
+
     RoomBuildResult _room;
     RoomBuildConfig _config;
+
     bool _active = false;
+
     Wand _test_wand;
     ProjectileManager _projectiles;
     CombatSystem _combat{collision_runtime()};

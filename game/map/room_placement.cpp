@@ -67,8 +67,10 @@ elysia::core::Vector2 find_room_spawn(const DungeonRoom& map, elysia::core::Vect
 elysia::core::Vector2 player_spawn_near_portal(const DungeonRoom& map)
 {
     const auto portal = central_portal_bounds(map);
+
     if (!walkable_bounds(map, portal))
         throw std::runtime_error("Room center cannot host the portal");
+
     return find_room_spawn(map, kPlayerSpawnSize, portal.center(), {&portal, 1});
 }
 }
