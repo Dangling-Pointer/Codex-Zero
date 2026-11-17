@@ -1,177 +1,41 @@
 #include "transition_scene.h"
 
-#include "engine/localization/localization_service.h"
-#include "engine/ui/widgets/ui_button.h"
-#include "engine/ui/window/ui_window.h"
 #include "game/gameflow/game_flow_manager.h"
 #include "game/scene/scene_keys.h"
+#include "game/ui/floor_map_view.h"
 
-#include <algorithm>
 #include <stdexcept>
-#include <string>
-#include <utility>
-
-namespace
-{
-using elysia::core::Rect;
-using elysia::core::Vector2;
-using elysia::ui::UiButton;
-using elysia::ui::UiButtonStyleOverrides;
-using elysia::ui::UiLayoutChildOptions;
-using elysia::ui::UiWindow;
-
-class MapConnections final : public elysia::ui::UiElement
-{
-public:
-    using Edge = std::pair<Vector2, Vector2>;
-
-    MapConnections(const Rect& rect, std::vector<Edge> edges)
-        : UiElement(rect), _edges(std::move(edges)) {}
-
-    void submit_ui_render_commands(std::vector<elysia::core::UiRenderCommand>& commands) const override
-    {
-        for (const auto& [from, to] : _edges)
-        {
-            commands.push_back(elysia::core::make_ui_draw_line_command(
-                from, to, elysia::core::colors::gray_500,
-                elysia::core::UiStrokeWidth{elysia::core::UiStrokeWidthMode::Logical, 2.0f}));
-        }
-    }
-
-private:
-    std::vector<Edge> _edges;
-};
-
-std::string_view room_label_key(RoomType type)
-{
-    switch (type)
-    {
-    case RoomType::Start: return "floor_map.start";
-    case RoomType::End: return "floor_map.end";
-    case RoomType::Combat: return "floor_map.combat";
-    case RoomType::Elite: return "floor_map.elite";
-    case RoomType::Shop: return "floor_map.shop";
-    case RoomType::Event: return "floor_map.event";
-    case RoomType::Rest: return "floor_map.rest";
-    default: return "floor_map.room";
-    }
-}
-
-UiButtonStyleOverrides room_button_style(const Room& room, bool is_current_room)
-{
-    using namespace elysia::core::colors;
-
-    UiButtonStyleOverrides style;
-    if (is_current_room)
-    {
-        style.chrome.background.disabled = blue_700;
-        style.chrome.border.disabled = blue_300;
-        style.text.disabled = white;
-    }
-    else if (room.visited)
-    {
-        style.chrome.background.idle = brown_700;
-        style.chrome.background.focused = brown_500;
-        style.chrome.background.active = brown_700;
-        style.chrome.border.idle = orange_300;
-        style.chrome.border.focused = yellow_300;
-        style.chrome.border.active = orange_500;
-        style.text.enabled = white;
-    }
-    else if (room.type == RoomType::End)
-    {
-        style.chrome.border.disabled = green_500;
-        style.text.disabled = green_300;
-    }
-    return style;
-}
-}
 
 void TransitionScene::on_enter(const elysia::scene::ScenePayload& payload)
 {
+    const auto& flow = *GameFlowManager::instance();
     const auto* entry = elysia::scene::try_scene_payload<FloorMapPayload>(payload);
-    if (!entry || entry->from_room != GameFlowManager::instance()->get_current_room_id())
+    if (!entry || entry->from_room != flow.get_current_room_id())
         throw std::invalid_argument("Floor map requires the current room and player context");
 
     _entry = *entry;
-    build_map();
+    const auto width = static_cast<float>(runtime_context().logical_width());
+    const auto height = static_cast<float>(runtime_context().logical_height());
+
+    _map_view = create_and_add_object<FloorMapView>(
+        elysia::core::Rect{0, 0, width, height},
+        flow.current_floor(),
+        [&flow](RoomID id) { return flow.can_enter_room(id); },
+        [this](RoomID id) { choose_room(id); });
+    if (!_map_view)
+        throw std::runtime_error("Cannot create floor map view");
+
+    _map_view->set_on_cancel([this] { return_to_menu(); });
 }
 
 void TransitionScene::on_exit() { clear_map(); }
 void TransitionScene::on_reset() { clear_map(); }
 
-void TransitionScene::build_map()
-{
-    const auto& flow = *GameFlowManager::instance();
-    const auto rooms = flow.rooms();
-    const auto [left, right] = std::ranges::minmax_element(rooms, {}, &Room::x);
-    const auto [top, bottom] = std::ranges::minmax_element(rooms, {}, &Room::y);
-    const auto width = static_cast<float>(runtime_context().logical_width());
-    const auto height = static_cast<float>(runtime_context().logical_height());
-    const Rect viewport{0, 0, width, height};
-    _window = create_and_add_object<UiWindow>(viewport, 10);
-    if (!_window)
-        throw std::runtime_error("Cannot create floor map window");
-
-    const float columns = static_cast<float>(right->x - left->x + 1);
-    const float rows = static_cast<float>(bottom->y - top->y + 1);
-    const Vector2 spacing{
-        std::min(154.0f, width / (columns + 1)),
-        std::min(106.0f, height / (rows + 1)),
-    };
-    const Vector2 button_size{spacing.x * 0.82f, spacing.y * 0.45f};
-    const float center_x = (left->x + right->x) * 0.5f;
-    const float center_y = (top->y + bottom->y) * 0.5f;
-    const auto button_center = [&](const Room& room) {
-        const Vector2 offset{(room.x - center_x) * spacing.x, (room.y - center_y) * spacing.y};
-        return viewport.center() + offset;
-    };
-
-    std::vector<MapConnections::Edge> edges;
-    for (const auto& room : rooms)
-    {
-        if (!room.discovered)
-            continue;
-        for (const RoomID id : room.neighbors)
-        {
-            if (id <= room.id) // Draw each undirected connection once.
-                continue;
-            const auto& neighbor = *flow.find_room(id);
-            if (neighbor.discovered && (room.visited || neighbor.visited))
-                edges.emplace_back(button_center(room), button_center(neighbor));
-        }
-    }
-    _window->create_child<MapConnections>(viewport, std::move(edges));
-
-    const auto current_room = flow.get_current_room_id();
-    for (const auto& room : rooms)
-    {
-        if (!room.discovered)
-            continue;
-
-        const auto rect = Rect::from_center(button_center(room), button_size);
-        const UiLayoutChildOptions layout{._margin = {.left = rect.x(), .top = rect.y()}};
-        auto* button = _window->create_child<UiButton>(layout, Rect{{}, button_size}, 1);
-
-        auto label = std::to_string(room.id);
-        if (room.id < 10)
-            label.insert(label.begin(), '0');
-        label += ' ';
-        label += ELYSIA_LOCALIZATION->tr(room_label_key(room.type));
-
-        button->set_text_content(elysia::ui::ui_raw_text(std::move(label)));
-        button->set_enabled(flow.can_enter_room(room.id));
-        button->set_style_overrides(room_button_style(room, room.id == current_room));
-        button->set_on_click([this, id = room.id] { choose_room(id); });
-    }
-    _window->set_on_cancel([this] { return_to_menu(); });
-}
-
 void TransitionScene::clear_map() noexcept
 {
-    if (_window)
-        _window->destroy();
-    _window = nullptr;
+    if (_map_view)
+        _map_view->destroy();
+    _map_view = nullptr;
     _entry.reset();
     _route_requested = false;
 }
@@ -182,6 +46,7 @@ void TransitionScene::choose_room(RoomID room_id)
         return;
 
     const auto& flow = *GameFlowManager::instance();
+
     if (_entry->from_room != flow.get_current_room_id() || !flow.can_enter_room(room_id))
         return;
 

@@ -9,11 +9,16 @@
 #include "game/gameflow/game_flow_manager.h"
 #include "game/scene/run/combat_scene.h"
 #include "game/scene/scene_keys.h"
+#include "game/ui/floor_map_view.h"
 #include "engine/core/render/render_command.h"
 #include "engine/object_query/game_object_query_service.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <iostream>
+#include <limits>
+#include <queue>
 #include <stdexcept>
 
 namespace
@@ -134,6 +139,111 @@ void click(elysia::scene::SceneManager& manager, int x, int y)
     }
 }
 
+void fixed_floor_topology()
+{
+    const GameFlowManager flow;
+    const auto& floor = flow.current_floor();
+    check(floor.rooms.size() == 6 && floor.rooms.front().size() == 6, "floor uses a 6 by 6 grid");
+    check(floor.start_room_id == 0 && floor.end_room_id == 13, "start and exit retain their IDs");
+    check(floor.find_position(0) == FloorPosition{2, 2}, "start is at the translated grid position");
+    check(!flow.find_room(14) && !flow.find_room(std::numeric_limits<RoomID>::max()),
+          "unknown IDs do not resolve to a room");
+    check(!floor.room_at({-1, 2}) && !floor.room_at({6, 2}) && !floor.room_at({0, 0}),
+          "room lookup handles the edges and empty cells");
+
+    int room_count = 0;
+    int connection_count = 0;
+    for (int y = 0; y < Floor::height; ++y)
+    {
+        for (int x = 0; x < Floor::width; ++x)
+        {
+            const FloorPosition position{x, y};
+            if (!floor.room_at(position))
+                continue;
+
+            ++room_count;
+            for (const auto& neighbor : floor.neighbors(position))
+            {
+                if (!neighbor)
+                    continue;
+
+                ++connection_count;
+                const auto reverse = floor.neighbors(*neighbor);
+                check(std::ranges::find(reverse, std::optional{position}) != reverse.end(),
+                      "each connection is bidirectional");
+            }
+        }
+    }
+    check(room_count == 14 && connection_count == 34, "fixed floor has 14 rooms and 17 connections");
+    check(floor.room_at({2, 2})->accessible_directions == RoomDirection::All, "start connects in all directions");
+
+    const auto east_neighbors = floor.neighbors(*floor.find_position(2));
+    check(std::ranges::find(east_neighbors, floor.find_position(10)) == east_neighbors.end(),
+          "adjacent rooms 2 and 10 are not connected");
+
+    auto one_way = floor;
+    one_way.room_at({2, 1})->accessible_directions = RoomDirection::None;
+    check(!one_way.neighbors({2, 2}).front(), "a direction bit without its reverse cannot be traversed");
+
+    std::array<int, 14> distance;
+    distance.fill(-1);
+    distance[floor.start_room_id] = 0;
+    std::queue<RoomID> pending;
+    pending.push(floor.start_room_id);
+    while (!pending.empty())
+    {
+        const auto id = pending.front();
+        pending.pop();
+        for (const auto& neighbor : floor.neighbors(*floor.find_position(id)))
+        {
+            if (!neighbor)
+                continue;
+
+            const auto next = floor.room_at(*neighbor)->id;
+            check(next < distance.size(), "the fixed floor retains its original ID range");
+            if (distance[next] < 0)
+            {
+                distance[next] = distance[id] + 1;
+                pending.push(next);
+            }
+        }
+    }
+    check(std::ranges::count(distance, -1) == 0, "every room is reachable");
+    check(distance[floor.end_room_id] == 4, "the shortest start-to-exit route takes four moves");
+}
+
+void floor_map_directions()
+{
+    using elysia::core::UiRenderCommand;
+    using elysia::core::UiRenderCommandType;
+
+    GameFlowManager flow;
+    const auto draw_map = [&] {
+        FloorMapView view(Rect{0, 0, 1280, 720}, flow.current_floor(),
+                          [&](RoomID id) { return flow.can_enter_room(id); },
+                          [](RoomID) {});
+        std::vector<UiRenderCommand> commands;
+        view.submit_ui_render_commands(commands);
+        return commands;
+    };
+    const auto line_count = [](const auto& commands, elysia::core::Color color) {
+        return std::ranges::count_if(commands, [color](const auto& command) {
+            return command.type == UiRenderCommandType::DrawLine && command.color == color;
+        });
+    };
+
+    const auto start = draw_map();
+    check(line_count(start, elysia::core::colors::gray_500) == 4
+        && line_count(start, elysia::core::colors::gray_300) == 16,
+        "the starting map shows arrows in both directions on each revealed connection");
+
+    check(flow.try_enter_room(1), "the first room can be entered");
+    const auto explored = draw_map();
+    check(line_count(explored, elysia::core::colors::gray_500) == 6
+        && line_count(explored, elysia::core::colors::gray_300) == 24,
+        "exploration reveals new direction markers with their connections");
+}
+
 void single_floor_run()
 {
     using elysia::scene::SceneManager;
@@ -148,9 +258,12 @@ void single_floor_run()
     manager.start(make_run_room_route(0, initial_character));
     check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 0,
           "run opens the fixed starting room");
-    for (const auto& room : flow.rooms())
-        check(room.discovered == (room.id <= 4 || room.id == 13) && room.visited == (room.id == 0),
+    for (RoomID id = 0; id < 14; ++id)
+    {
+        const auto* room = flow.find_room(id);
+        check(room && room->discovered == (id <= 4 || id == 13) && room->visited == (id == 0),
               "initial fog shows the start, neighbors and exit");
+    }
 
     const auto* query = ELYSIA_OBJECT_QUERY;
     const auto* start_map = query->find_object<DungeonRoom>();
@@ -361,6 +474,8 @@ int main()
         placement();
         room_portal<CombatScene>(RoomScenePayload{
             *CharacterManager::instance()->create_context("default_player"), {}});
+        fixed_floor_topology();
+        floor_map_directions();
         single_floor_run();
         std::cout << "Portal tests passed\n";
         return 0;

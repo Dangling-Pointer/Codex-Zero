@@ -3,9 +3,6 @@
 #include "dungeon_graph_types.h"
 #include "engine/tools/singleton.h"
 
-#include <array>
-#include <span>
-
 class GameFlowManager : public elysia::tools::Singleton<GameFlowManager>
 {
 public:
@@ -16,8 +13,7 @@ public:
     [[nodiscard]] RoomID get_current_room_id() const noexcept;
     [[nodiscard]] RoomType get_current_room_type() const noexcept;
 
-    [[nodiscard]] std::span<const Room> rooms() const noexcept;
-    [[nodiscard]] std::vector<Room> get_rooms_in_level() const;
+    [[nodiscard]] const Floor& current_floor() const noexcept;
     [[nodiscard]] const Room* find_room(RoomID room_id) const noexcept;
     [[nodiscard]] bool can_enter_room(RoomID room_id) const noexcept;
     [[nodiscard]] bool try_enter_room(RoomID room_id) noexcept;
@@ -25,9 +21,7 @@ public:
     void mark_current_room_cleared() noexcept;
 
 private:
-    void visit_room(RoomID room_id) noexcept;
+    void visit_room(FloorPosition position) noexcept;
 
-    std::array<Room, 14> _rooms;
-    RoomID _current_room = 0;
-    std::uint64_t _run_seed = 0;
+    Floor _floor;
 };

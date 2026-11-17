@@ -3,33 +3,40 @@
 #include "engine/tools/logger.h"
 
 #include <algorithm>
+#include <stdexcept>
 #include <utility>
 
-//for testing
 namespace
 {
 constexpr RoomID start_room_id = 0;
 constexpr RoomID end_room_id = 13;
 
-std::array<Room, 14> make_fixed_rooms()
+struct FixedRoom
 {
-    // Room IDs are array indices. Positive x points right and positive y points down.
-    std::array<Room, 14> rooms{{
-        {start_room_id, RoomType::Start, 0, 0},
-        {1, RoomType::Combat, 0, -1},
-        {2, RoomType::Combat, 1, 0},
-        {3, RoomType::Rest, 0, 1},
-        {4, RoomType::Combat, -1, 0},
-        {5, RoomType::Event, 1, -1},
-        {6, RoomType::Elite, 2, -1},
-        {7, RoomType::Combat, 2, 0},
-        {8, RoomType::Combat, 3, 0},
-        {9, RoomType::Event, 0, -2},
-        {10, RoomType::Shop, 1, 1},
-        {11, RoomType::Rest, -2, 0},
-        {12, RoomType::Event, -1, 1},
-        {end_room_id, RoomType::End, 3, -1},
-    }};
+    RoomID id;
+    RoomType type;
+    FloorPosition position;
+};
+
+Floor make_fixed_floor()
+{
+    // Grid x increases to the right, and y increases downwards.
+    constexpr FixedRoom rooms[] = {
+        {start_room_id, RoomType::Start, {2, 2}},
+        {1, RoomType::Combat, {2, 1}},
+        {2, RoomType::Combat, {3, 2}},
+        {3, RoomType::Rest, {2, 3}},
+        {4, RoomType::Combat, {1, 2}},
+        {5, RoomType::Event, {3, 1}},
+        {6, RoomType::Elite, {4, 1}},
+        {7, RoomType::Combat, {4, 2}},
+        {8, RoomType::Combat, {5, 2}},
+        {9, RoomType::Event, {2, 0}},
+        {10, RoomType::Shop, {3, 3}},
+        {11, RoomType::Rest, {0, 2}},
+        {12, RoomType::Event, {1, 3}},
+        {end_room_id, RoomType::End, {5, 1}},
+    };
 
     constexpr std::pair<RoomID, RoomID> connections[] = {
         {0, 1}, {1, 5}, {5, 6}, {6, 13}, // North route
@@ -38,37 +45,52 @@ std::array<Room, 14> make_fixed_rooms()
         {0, 3}, {3, 12}, {12, 4}, {4, 0}, // Southwest loop
         {1, 9}, {3, 10}, {4, 11},         // Dead ends
     };
+
+    Floor floor{
+        .start_room_id = start_room_id,
+        .end_room_id = end_room_id,
+        .current_room_id = start_room_id,
+    };
+    for (const auto& room : rooms)
+        floor.rooms[room.position.y][room.position.x].emplace(Room{.id = room.id, .type = room.type});
+
     for (const auto& [first, second] : connections)
     {
-        rooms[first].neighbors.push_back(second);
-        rooms[second].neighbors.push_back(first);
+        const auto from = floor.find_position(first);
+        const auto to = floor.find_position(second);
+        if (!from || !to || !floor.connect(*from, *to))
+            throw std::logic_error("Invalid connection in the fixed floor");
     }
-    return rooms;
+    return floor;
 }
 }
-//for testing
 
-
-GameFlowManager::GameFlowManager() : _rooms(make_fixed_rooms())
+GameFlowManager::GameFlowManager() : _floor(make_fixed_floor())
 {
     restart();
 }
 
 void GameFlowManager::restart(std::uint64_t run_seed) noexcept
 {
-    _run_seed = run_seed;
-
+    _floor.seed = run_seed;
     ELYSIA_LOG_DEBUG("GameFlowManager", "start with seed: " << run_seed);
 
-    for (auto& room : _rooms)
+    for (auto& row : _floor.rooms)
     {
-        room.discovered = false;
-        room.visited = false;
-        room.cleared = false;
+        for (auto& room : row)
+        {
+            if (!room)
+                continue;
+
+            room->discovered = false;
+            room->visited = false;
+            room->cleared = false;
+            room->event_triggered = false;
+        }
     }
 
-    _rooms[end_room_id].discovered = true;
-    visit_room(start_room_id);
+    _floor.room_at(*_floor.find_position(_floor.end_room_id))->discovered = true;
+    visit_room(*_floor.find_position(_floor.start_room_id));
 }
 
 DungeonDepth GameFlowManager::get_current_depth() const noexcept
@@ -78,38 +100,41 @@ DungeonDepth GameFlowManager::get_current_depth() const noexcept
 
 RoomID GameFlowManager::get_current_room_id() const noexcept
 {
-    return _current_room;
+    return _floor.current_room_id;
 }
 
 RoomType GameFlowManager::get_current_room_type() const noexcept
 {
-    return _rooms[_current_room].type;
+    return find_room(_floor.current_room_id)->type;
 }
 
-std::span<const Room> GameFlowManager::rooms() const noexcept
+const Floor& GameFlowManager::current_floor() const noexcept
 {
-    return _rooms;
-}
-
-std::vector<Room> GameFlowManager::get_rooms_in_level() const
-{
-    return std::vector<Room>(_rooms.begin(), _rooms.end());
+    return _floor;
 }
 
 const Room* GameFlowManager::find_room(RoomID room_id) const noexcept
 {
-    return room_id < _rooms.size() ? &_rooms[room_id] : nullptr;
+    const auto position = _floor.find_position(room_id);
+    return position ? _floor.room_at(*position) : nullptr;
 }
 
 bool GameFlowManager::can_enter_room(RoomID room_id) const noexcept
 {
-    const auto* target = find_room(room_id);
-    if (!target || room_id == _current_room)
+    if (room_id == _floor.current_room_id)
         return false;
 
+    const auto position = _floor.find_position(room_id);
+    if (!position)
+        return false;
+
+    const auto& target = *_floor.room_at(*position);
+    if (target.visited)
+        return true;
+
     // Each first visit extends the connected set of visited rooms by one edge.
-    return target->visited || std::ranges::any_of(target->neighbors, [this](RoomID neighbor) {
-        return _rooms[neighbor].visited;
+    return std::ranges::any_of(_floor.neighbors(*position), [this](const auto& neighbor) {
+        return neighbor && _floor.room_at(*neighbor)->visited;
     });
 }
 
@@ -118,26 +143,30 @@ bool GameFlowManager::try_enter_room(RoomID room_id) noexcept
     if (!can_enter_room(room_id))
         return false;
 
-    visit_room(room_id);
+    visit_room(*_floor.find_position(room_id));
     return true;
 }
 
 std::uint64_t GameFlowManager::room_seed(RoomID room_id) const noexcept
 {
-    return _run_seed + room_id;
+    return _floor.seed + room_id;
 }
 
 void GameFlowManager::mark_current_room_cleared() noexcept
 {
-    _rooms[_current_room].cleared = true;
+    _floor.room_at(*_floor.find_position(_floor.current_room_id))->cleared = true;
 }
 
-void GameFlowManager::visit_room(RoomID room_id) noexcept
+void GameFlowManager::visit_room(FloorPosition position) noexcept
 {
-    _current_room = room_id;
-    auto& room = _rooms[room_id];
+    auto& room = *_floor.room_at(position);
+    _floor.current_room_id = room.id;
     room.discovered = true;
     room.visited = true;
-    for (const auto neighbor : room.neighbors)
-        _rooms[neighbor].discovered = true;
+
+    for (const auto& neighbor : _floor.neighbors(position))
+    {
+        if (neighbor)
+            _floor.room_at(*neighbor)->discovered = true;
+    }
 }
