@@ -17,11 +17,13 @@ void TransitionScene::on_enter(const elysia::scene::ScenePayload& payload)
     const auto width = static_cast<float>(runtime_context().logical_width());
     const auto height = static_cast<float>(runtime_context().logical_height());
 
+    // Show the whole fixed floor to check the full-grid layout.
     _map_view = create_and_add_object<FloorMapView>(
         elysia::core::Rect{0, 0, width, height},
         flow.current_floor(),
         [&flow](RoomID id) { return flow.can_enter_room(id); },
-        [this](RoomID id) { choose_room(id); });
+        [this](RoomID id) { choose_room(id); },
+        FloorMapView::Visibility::ShowAll);
     if (!_map_view)
         throw std::runtime_error("Cannot create floor map view");
 

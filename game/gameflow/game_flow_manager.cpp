@@ -36,6 +36,30 @@ Floor make_fixed_floor()
         {11, RoomType::Rest, {0, 2}},
         {12, RoomType::Event, {1, 3}},
         {end_room_id, RoomType::End, {5, 1}},
+
+        // Fill the remaining cells to exercise the full map layout.
+        {14, RoomType::Rest, {0, 0}},
+        {15, RoomType::Combat, {1, 0}},
+        {16, RoomType::Shop, {3, 0}},
+        {17, RoomType::Combat, {4, 0}},
+        {18, RoomType::Event, {5, 0}},
+        {19, RoomType::Combat, {0, 1}},
+        {20, RoomType::Elite, {1, 1}},
+        {21, RoomType::Event, {0, 3}},
+        {22, RoomType::Elite, {4, 3}},
+        {23, RoomType::Rest, {5, 3}},
+        {24, RoomType::Combat, {0, 4}},
+        {25, RoomType::Rest, {1, 4}},
+        {26, RoomType::Combat, {2, 4}},
+        {27, RoomType::Shop, {3, 4}},
+        {28, RoomType::Combat, {4, 4}},
+        {29, RoomType::Event, {5, 4}},
+        {30, RoomType::Shop, {0, 5}},
+        {31, RoomType::Combat, {1, 5}},
+        {32, RoomType::Event, {2, 5}},
+        {33, RoomType::Elite, {3, 5}},
+        {34, RoomType::Rest, {4, 5}},
+        {35, RoomType::Combat, {5, 5}},
     };
 
     constexpr std::pair<RoomID, RoomID> connections[] = {
@@ -43,7 +67,13 @@ Floor make_fixed_floor()
         {0, 2}, {2, 7}, {7, 8}, {8, 13}, // East route
         {2, 5}, {6, 7},                  // Links between routes
         {0, 3}, {3, 12}, {12, 4}, {4, 0}, // Southwest loop
-        {1, 9}, {3, 10}, {4, 11},         // Dead ends
+        {1, 9}, {3, 10}, {4, 11},         // Side branches
+
+        {9, 15}, {15, 14}, {14, 19}, {19, 20},
+        {9, 16}, {16, 17}, {17, 18},
+        {11, 21}, {21, 24}, {24, 30}, {30, 31}, {31, 25},
+        {25, 26}, {26, 32}, {32, 33}, {33, 27},
+        {10, 22}, {22, 23}, {23, 29}, {29, 35}, {35, 34}, {34, 28},
     };
 
     Floor floor{

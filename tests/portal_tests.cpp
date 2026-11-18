@@ -12,6 +12,7 @@
 #include "game/ui/floor_map_view.h"
 #include "engine/core/render/render_command.h"
 #include "engine/object_query/game_object_query_service.h"
+#include "engine/ui/widgets/ui_button.h"
 
 #include <algorithm>
 #include <array>
@@ -146,9 +147,9 @@ void fixed_floor_topology()
     check(floor.rooms.size() == 6 && floor.rooms.front().size() == 6, "floor uses a 6 by 6 grid");
     check(floor.start_room_id == 0 && floor.end_room_id == 13, "start and exit retain their IDs");
     check(floor.find_position(0) == FloorPosition{2, 2}, "start is at the translated grid position");
-    check(!flow.find_room(14) && !flow.find_room(std::numeric_limits<RoomID>::max()),
+    check(!flow.find_room(36) && !flow.find_room(std::numeric_limits<RoomID>::max()),
           "unknown IDs do not resolve to a room");
-    check(!floor.room_at({-1, 2}) && !floor.room_at({6, 2}) && !floor.room_at({0, 0}),
+    check(!floor.room_at({-1, 2}) && !floor.room_at({6, 2}) && !Floor{}.room_at({0, 0}),
           "room lookup handles the edges and empty cells");
 
     int room_count = 0;
@@ -174,7 +175,7 @@ void fixed_floor_topology()
             }
         }
     }
-    check(room_count == 14 && connection_count == 34, "fixed floor has 14 rooms and 17 connections");
+    check(room_count == 36 && connection_count == 78, "test floor fills all 36 cells with 39 connections");
     check(floor.room_at({2, 2})->accessible_directions == RoomDirection::All, "start connects in all directions");
 
     const auto east_neighbors = floor.neighbors(*floor.find_position(2));
@@ -185,7 +186,7 @@ void fixed_floor_topology()
     one_way.room_at({2, 1})->accessible_directions = RoomDirection::None;
     check(!one_way.neighbors({2, 2}).front(), "a direction bit without its reverse cannot be traversed");
 
-    std::array<int, 14> distance;
+    std::array<int, 36> distance;
     distance.fill(-1);
     distance[floor.start_room_id] = 0;
     std::queue<RoomID> pending;
@@ -242,6 +243,31 @@ void floor_map_directions()
     check(line_count(explored, elysia::core::colors::gray_500) == 6
         && line_count(explored, elysia::core::colors::gray_300) == 24,
         "exploration reveals new direction markers with their connections");
+
+    const Rect viewport{0, 0, 1280, 720};
+    FloorMapView preview(viewport, flow.current_floor(),
+                         [&](RoomID id) { return flow.can_enter_room(id); },
+                         [](RoomID) {}, FloorMapView::Visibility::ShowAll);
+    std::vector<UiRenderCommand> preview_commands;
+    preview.submit_ui_render_commands(preview_commands);
+    check(line_count(preview_commands, elysia::core::colors::gray_500) == 39
+        && line_count(preview_commands, elysia::core::colors::gray_300) == 156,
+        "full-map preview draws every connection and its directions");
+
+    std::vector<Rect> button_bounds;
+    for (std::size_t i = 0; i < preview.child_count(); ++i)
+    {
+        const auto* button = dynamic_cast<const elysia::ui::UiButton*>(preview.child_at(i));
+        if (!button)
+            continue;
+
+        const auto bounds = button->screen_rect();
+        check(viewport.contains(bounds), "full-map room buttons fit inside the viewport");
+        check(std::ranges::none_of(button_bounds, [&](const Rect& other) { return other.intersects(bounds); }),
+              "full-map room buttons do not overlap");
+        button_bounds.push_back(bounds);
+    }
+    check(button_bounds.size() == 36, "all 36 room buttons are visible in the preview");
 }
 
 void single_floor_run()
@@ -258,7 +284,7 @@ void single_floor_run()
     manager.start(make_run_room_route(0, initial_character));
     check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 0,
           "run opens the fixed starting room");
-    for (RoomID id = 0; id < 14; ++id)
+    for (RoomID id = 0; id < 36; ++id)
     {
         const auto* room = flow.find_room(id);
         check(room && room->discovered == (id <= 4 || id == 13) && room->visited == (id == 0),
@@ -278,12 +304,12 @@ void single_floor_run()
     };
     enter_portal();
     check(manager.current_scene_key() == FloorMap, "start portal opens the map");
-    click(manager, 1025, 307);
-    click(manager, 717, 307);
+    click(manager, 1025, 206);
+    click(manager, 717, 206);
     check(manager.current_scene_key() == FloorMap && flow.get_current_room_id() == 0,
-          "disabled exit and hidden nodes do not request a route");
+          "visible but unreachable rooms do not request a route");
 
-    click(manager, 563, 307);
+    click(manager, 563, 206);
     check(manager.current_scene_key() == CombatRoom && flow.get_current_room_id() == 0,
           "selection loads the battle room before committing movement");
     manager.on_update(0);
@@ -306,13 +332,13 @@ void single_floor_run()
     manager.on_update(0);
     check(manager.current_scene_key() == FloorMap && flow.find_room(1)->cleared,
           "defeated enemies enable the portal and mark the room cleared");
-    click(manager, 563, 413);
+    click(manager, 563, 309);
     manager.on_update(0);
     check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 0,
           "visited start can be reentered");
     check(query->find_object<PlayerCharacter>()->health() == health, "health survives scene transitions");
     enter_portal();
-    click(manager, 563, 307);
+    click(manager, 563, 206);
     manager.on_update(0);
     check(manager.current_scene_key() == CombatRoom && flow.get_current_room_id() == 1,
           "cleared combat room remains selectable");
@@ -320,41 +346,41 @@ void single_floor_run()
     check(layout(*query->find_object<DungeonRoom>()) == first_layout, "revisit retains seeded terrain");
 
     enter_portal();
-    click(manager, 717, 307);
+    click(manager, 717, 206);
     manager.on_update(0);
     check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 5, "event uses a fixed room");
     enter_portal();
-    click(manager, 1025, 307); // The visible exit is beyond unvisited rooms.
-    click(manager, 717, 307); // The current room.
+    click(manager, 1025, 206); // The visible exit is beyond unvisited rooms.
+    click(manager, 717, 206); // The current room.
     check(manager.current_scene_key() == FloorMap && flow.get_current_room_id() == 5,
           "routes through unvisited rooms and the current room remain disabled");
 
     check(flow.find_room(9)->discovered && !flow.find_room(9)->visited, "room 9 is visible but unvisited");
-    click(manager, 563, 201); // Room 9 is reachable through visited room 1.
+    click(manager, 563, 103); // Room 9 is reachable through visited room 1.
     manager.on_update(0);
     check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 9
         && flow.find_room(9)->visited && query->find_object<PlayerCharacter>()->health() == health,
         "reachable unexplored room can be selected through a visited room");
     enter_portal();
 
-    click(manager, 563, 413);
+    click(manager, 563, 309);
     manager.on_update(0);
     check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 0
         && query->find_object<PlayerCharacter>()->health() == health,
         "visited non-neighbor can be selected directly with player state intact");
     enter_portal();
-    click(manager, 717, 307);
+    click(manager, 717, 206);
     manager.on_update(0);
     check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 5,
           "fast travel works in both directions between visited rooms");
     enter_portal();
-    click(manager, 871, 307);
+    click(manager, 871, 206);
     manager.on_update(0);
     check(manager.current_scene_key() == CombatRoom && flow.get_current_room_id() == 6, "elite routes to combat");
     for (auto* enemy : query->find_objects<Enemy>())
         enemy->receive_attack({0, 0, enemy->max_health()});
     enter_portal();
-    click(manager, 1025, 307);
+    click(manager, 1025, 206);
     manager.on_update(0);
     check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 13, "route reaches the exit");
     enter_portal();

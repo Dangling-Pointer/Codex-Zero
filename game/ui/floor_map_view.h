@@ -8,7 +8,14 @@
 class FloorMapView final : public elysia::ui::UiWindow
 {
 public:
+    enum class Visibility
+    {
+        DiscoveredOnly,
+        ShowAll,
+    };
+
     FloorMapView(const elysia::core::Rect& viewport, const Floor& floor,
                  const std::function<bool(RoomID)>& can_enter_room,
-                 const std::function<void(RoomID)>& choose_room);
+                 const std::function<void(RoomID)>& choose_room,
+                 Visibility visibility = Visibility::DiscoveredOnly);
 };

@@ -118,7 +118,8 @@ UiButtonStyleOverrides room_button_style(const Room& room, bool is_current_room)
 
 FloorMapView::FloorMapView(const Rect& viewport, const Floor& floor,
                            const std::function<bool(RoomID)>& can_enter_room,
-                           const std::function<void(RoomID)>& choose_room)
+                           const std::function<void(RoomID)>& choose_room,
+                           Visibility visibility)
     : UiWindow(viewport, 10)
 {
     std::vector<FloorPosition> positions;
@@ -162,12 +163,13 @@ FloorMapView::FloorMapView(const Rect& viewport, const Floor& floor,
     };
 
     std::vector<MapConnections::Edge> edges;
+    const bool show_all_rooms = visibility == Visibility::ShowAll;
 
     for (const auto position : positions)
     {
         const auto& room = *floor.room_at(position);
 
-        if (!room.discovered)
+        if (!show_all_rooms && !room.discovered)
             continue;
 
         for (const auto& neighbor_position : floor.neighbors(position))
@@ -180,7 +182,8 @@ FloorMapView::FloorMapView(const Rect& viewport, const Floor& floor,
             if (neighbor.id <= room.id) // Draw each undirected connection once.
                 continue;
 
-            if (neighbor.discovered && (room.visited || neighbor.visited))
+            const bool connection_discovered = neighbor.discovered && (room.visited || neighbor.visited);
+            if (show_all_rooms || connection_discovered)
                 edges.emplace_back(button_center(position), button_center(*neighbor_position));
         }
     }
@@ -190,7 +193,7 @@ FloorMapView::FloorMapView(const Rect& viewport, const Floor& floor,
     {
         const auto& room = *floor.room_at(position);
 
-        if (!room.discovered)
+        if (!show_all_rooms && !room.discovered)
             continue;
 
         const auto rect = Rect::from_center(button_center(position), button_size);

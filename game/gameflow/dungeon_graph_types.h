@@ -59,6 +59,7 @@ struct Floor
     static constexpr int height = 6;
 
     std::array<std::array<std::optional<Room>, width>, height> rooms{};
+
     RoomID start_room_id = 0;
     RoomID end_room_id = 0;
     RoomID current_room_id = 0;
