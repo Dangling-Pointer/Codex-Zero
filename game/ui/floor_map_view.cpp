@@ -50,7 +50,8 @@ public:
 
             // Each endpoint shows the direction a player can leave that room.
             const float arrow_size = std::min(6.0f, gap * 0.2f);
-            const auto inset = direction * (arrow_size + gap * 0.08f);
+            const float arrow_offset = arrow_size + std::min(6.0f, gap * 0.08f);
+            const auto inset = direction * arrow_offset;
             draw_arrow(commands, start + inset, direction, arrow_size, stroke);
             draw_arrow(commands, end - inset, -direction, arrow_size, stroke);
         }

@@ -270,6 +270,68 @@ void floor_map_directions()
     check(button_bounds.size() == 36, "all 36 room buttons are visible in the preview");
 }
 
+void sparse_floor_connections()
+{
+    Floor floor;
+    floor.rooms[0][0] = Room{.id = 0, .type = RoomType::Start, .discovered = true, .visited = true};
+    floor.rooms[0][3] = Room{.id = 1, .type = RoomType::Event, .discovered = true};
+    floor.rooms[4][3] = Room{.id = 2, .type = RoomType::End};
+    floor.start_room_id = 0;
+    floor.end_room_id = 2;
+    check(floor.connect({0, 0}, {3, 0}) && floor.connect({3, 0}, {3, 4}),
+          "aligned rooms connect across empty cells");
+    check(floor.neighbors({0, 0})[1] == FloorPosition{3, 0}
+        && floor.neighbors({3, 0})[3] == FloorPosition{0, 0}
+        && floor.neighbors({3, 0})[2] == FloorPosition{3, 4}
+        && floor.neighbors({3, 4})[0] == FloorPosition{3, 0},
+        "long connections are traversable in both directions");
+    check(!floor.neighbors({0, 0})[0] && !floor.neighbors({3, 4})[2],
+          "direction searches stop at the grid boundaries");
+    check(!floor.connect({0, 0}, {3, 4}) && !floor.connect({0, 0}, {1, 0})
+        && !floor.connect({0, 0}, {-1, 0}) && !floor.connect({0, 0}, {0, 0}),
+        "invalid destinations cannot create a connection");
+
+    auto blocked = floor;
+    blocked.rooms[0][1] = Room{.id = 3};
+    check(!blocked.connect({0, 0}, {3, 0}) && !blocked.neighbors({0, 0})[1]
+        && !blocked.neighbors({3, 0})[3], "an intervening room blocks a longer connection");
+    check(blocked.connect({0, 0}, {1, 0})
+        && blocked.neighbors({0, 0})[1] == FloorPosition{1, 0},
+        "a direction resolves to the nearest room");
+
+    auto one_way = floor;
+    one_way.rooms[0][0]->accessible_directions = RoomDirection::None;
+    check(!one_way.neighbors({3, 0})[3], "long connections still require the reverse direction");
+
+    using elysia::core::UiRenderCommand;
+    using elysia::core::UiRenderCommandType;
+    const auto can_enter = [](RoomID id) { return id == 1; };
+    const auto choose_room = [](RoomID) {};
+    FloorMapView preview(Rect{0, 0, 1280, 720}, floor, can_enter, choose_room,
+                         FloorMapView::Visibility::ShowAll);
+    std::vector<UiRenderCommand> commands;
+    preview.submit_ui_render_commands(commands);
+    const auto is_connection = [](const auto& command) {
+        return command.type == UiRenderCommandType::DrawLine
+            && command.color == elysia::core::colors::gray_500;
+    };
+    check(std::ranges::count_if(commands, is_connection) == 2,
+          "sparse map draws horizontal and vertical long connections once");
+    check(std::ranges::any_of(commands, [&](const auto& command) {
+        return is_connection(command)
+            && std::abs(command.line_end.x - command.line_start.x) > 300;
+    }) && std::ranges::any_of(commands, [&](const auto& command) {
+        return is_connection(command)
+            && std::abs(command.line_end.y - command.line_start.y) > 300;
+    }), "long lines span the empty grid cells");
+
+    FloorMapView fogged(Rect{0, 0, 1280, 720}, floor, can_enter, choose_room);
+    commands.clear();
+    fogged.submit_ui_render_commands(commands);
+    check(std::ranges::count_if(commands, is_connection) == 1,
+          "long connections respect the hidden destination");
+}
+
 void single_floor_run()
 {
     using elysia::scene::SceneManager;
@@ -502,6 +564,7 @@ int main()
             *CharacterManager::instance()->create_context("default_player"), {}});
         fixed_floor_topology();
         floor_map_directions();
+        sparse_floor_connections();
         single_floor_run();
         std::cout << "Portal tests passed\n";
         return 0;

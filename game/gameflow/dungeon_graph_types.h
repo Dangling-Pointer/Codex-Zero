@@ -68,6 +68,7 @@ struct Floor
     [[nodiscard]] Room* room_at(FloorPosition position) noexcept;
     [[nodiscard]] const Room* room_at(FloorPosition position) const noexcept;
     [[nodiscard]] std::optional<FloorPosition> find_position(RoomID room_id) const noexcept;
+    // Connected neighbors are the nearest rooms along each direction, across any empty cells.
     [[nodiscard]] std::array<std::optional<FloorPosition>, 4> neighbors(FloorPosition position) const noexcept;
     [[nodiscard]] bool connect(FloorPosition first, FloorPosition second) noexcept;
 };

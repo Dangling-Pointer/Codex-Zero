@@ -35,6 +35,22 @@ void add_direction(Room& room, RoomDirection direction) noexcept
     room.accessible_directions = static_cast<RoomDirection>(
         std::to_underlying(room.accessible_directions) | std::to_underlying(direction));
 }
+
+std::optional<FloorPosition> next_room(
+    const Floor& floor, FloorPosition position, const DirectionStep& step) noexcept
+{
+    position.x += step.dx;
+    position.y += step.dy;
+    while (in_bounds(position))
+    {
+        if (floor.room_at(position))
+            return position;
+
+        position.x += step.dx;
+        position.y += step.dy;
+    }
+    return std::nullopt;
+}
 }
 
 Room* Floor::room_at(FloorPosition position) noexcept
@@ -82,9 +98,8 @@ std::array<std::optional<FloorPosition>, 4> Floor::neighbors(FloorPosition posit
         if (!has_direction(*room, step.direction))
             continue;
 
-        const FloorPosition next{position.x + step.dx, position.y + step.dy};
-        const auto* neighbor = room_at(next);
-        if (neighbor && has_direction(*neighbor, step.opposite))
+        const auto next = next_room(*this, position, step);
+        if (next && has_direction(*room_at(*next), step.opposite))
             result[i] = next;
     }
     return result;
@@ -99,7 +114,7 @@ bool Floor::connect(FloorPosition first, FloorPosition second) noexcept
 
     for (const auto& step : directions)
     {
-        if (second.x - first.x == step.dx && second.y - first.y == step.dy)
+        if (next_room(*this, first, step) == second)
         {
             add_direction(*from, step.direction);
             add_direction(*to, step.opposite);
