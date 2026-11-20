@@ -2,12 +2,13 @@
 
 #include "dungeon_graph_types.h"
 #include "engine/tools/singleton.h"
+#include "floor_generator.h"
 
 class GameFlowManager : public elysia::tools::Singleton<GameFlowManager>
 {
 public:
     GameFlowManager();
-    void restart(std::uint64_t run_seed = 0) noexcept;
+    void restart(std::uint64_t run_seed = 0);
 
     [[nodiscard]] DungeonDepth get_current_depth() const noexcept;
     [[nodiscard]] RoomID get_current_room_id() const noexcept;
@@ -23,5 +24,7 @@ public:
 private:
     void visit_room(FloorPosition position) noexcept;
 
+    FloorGenerator _generator;
     Floor _floor;
+    RoomID _next_room_id = 0;
 };

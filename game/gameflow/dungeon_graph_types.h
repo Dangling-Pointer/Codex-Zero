@@ -11,11 +11,11 @@ using DungeonDepth = std::uint8_t;
 enum class RoomDirection : std::uint8_t
 {
     None = 0,
-    North = 1 << 0,
-    East = 1 << 1,
-    South = 1 << 2,
-    West = 1 << 3,
-    All = North | East | South | West,
+    Up = 1 << 0,
+    Right = 1 << 1,
+    Down = 1 << 2,
+    Left = 1 << 3,
+    All = Up | Right | Down | Left,
 };
 
 enum class RoomType : std::uint8_t
@@ -43,6 +43,12 @@ struct Room
     bool visited = false;
     bool cleared = false;
     bool event_triggered = false;
+};
+
+struct FloorGenerationConfig
+{
+    int min_room_number = 12;
+    int max_room_number = 15;
 };
 
 struct FloorPosition

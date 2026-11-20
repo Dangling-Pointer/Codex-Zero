@@ -1,26 +1,19 @@
 #pragma once
+
 #include "dungeon_graph_types.h"
-
-#include "engine/core/geometry/vector2.h"
+#include "room_factory.h"
 #include "engine/tools/random_generator.h"
-
-#include <array>
-#include <cstdint>
-#include <optional>
-#include <string>
-
 
 class FloorGenerator
 {
 public:
-
-	[[nodiscard]] Floor generate(std::uint64_t seed);
-
-private:
-	[[nodiscard]] elysia::core::Vector2 get_start_pos();
-	[[nodiscard]] elysia::core::Vector2 get_end_pos();
+    [[nodiscard]] Floor generate(std::uint64_t seed, RoomID first_room_id, const FloorGenerationConfig& config);
 
 private:
-	std::array<std::string, 10> _special_event_pool;
-	elysia::tools::RandomGenerator _random;
+    [[nodiscard]] FloorPosition get_start_pos();
+    [[nodiscard]] FloorPosition get_end_pos();
+
+private:
+    RoomFactory _room_factory;
+    elysia::tools::RandomGenerator _random;
 };

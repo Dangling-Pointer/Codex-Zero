@@ -6,121 +6,41 @@
 #include <stdexcept>
 #include <utility>
 
-namespace
-{
-constexpr RoomID start_room_id = 0;
-constexpr RoomID end_room_id = 13;
-
-struct FixedRoom
-{
-    RoomID id;
-    RoomType type;
-    FloorPosition position;
-};
-
-Floor make_fixed_floor()
-{
-    // Grid x increases to the right, and y increases downwards.
-    constexpr FixedRoom rooms[] = {
-        {start_room_id, RoomType::Start, {2, 2}},
-        {1, RoomType::Combat, {2, 1}},
-        {2, RoomType::Combat, {3, 2}},
-        {3, RoomType::Rest, {2, 3}},
-        {4, RoomType::Combat, {1, 2}},
-        {5, RoomType::Event, {3, 1}},
-        {6, RoomType::Elite, {4, 1}},
-        {7, RoomType::Combat, {4, 2}},
-        {8, RoomType::Combat, {5, 2}},
-        {9, RoomType::Event, {2, 0}},
-        {10, RoomType::Shop, {3, 3}},
-        {11, RoomType::Rest, {0, 2}},
-        {12, RoomType::Event, {1, 3}},
-        {end_room_id, RoomType::End, {5, 1}},
-
-        // Fill the remaining cells to exercise the full map layout.
-        {14, RoomType::Rest, {0, 0}},
-        {15, RoomType::Combat, {1, 0}},
-        {16, RoomType::Shop, {3, 0}},
-        {17, RoomType::Combat, {4, 0}},
-        {18, RoomType::Event, {5, 0}},
-        {19, RoomType::Combat, {0, 1}},
-        {20, RoomType::Elite, {1, 1}},
-        {21, RoomType::Event, {0, 3}},
-        {22, RoomType::Elite, {4, 3}},
-        {23, RoomType::Rest, {5, 3}},
-        {24, RoomType::Combat, {0, 4}},
-        {25, RoomType::Rest, {1, 4}},
-        {26, RoomType::Combat, {2, 4}},
-        {27, RoomType::Shop, {3, 4}},
-        {28, RoomType::Combat, {4, 4}},
-        {29, RoomType::Event, {5, 4}},
-        {30, RoomType::Shop, {0, 5}},
-        {31, RoomType::Combat, {1, 5}},
-        {32, RoomType::Event, {2, 5}},
-        {33, RoomType::Elite, {3, 5}},
-        {34, RoomType::Rest, {4, 5}},
-        {35, RoomType::Combat, {5, 5}},
-    };
-
-    constexpr std::pair<RoomID, RoomID> connections[] = {
-        {0, 1}, {1, 5}, {5, 6}, {6, 13}, // North route
-        {0, 2}, {2, 7}, {7, 8}, {8, 13}, // East route
-        {2, 5}, {6, 7},                  // Links between routes
-        {0, 3}, {3, 12}, {12, 4}, {4, 0}, // Southwest loop
-        {1, 9}, {3, 10}, {4, 11},         // Side branches
-
-        {9, 15}, {15, 14}, {14, 19}, {19, 20},
-        {9, 16}, {16, 17}, {17, 18},
-        {11, 21}, {21, 24}, {24, 30}, {30, 31}, {31, 25},
-        {25, 26}, {26, 32}, {32, 33}, {33, 27},
-        {10, 22}, {22, 23}, {23, 29}, {29, 35}, {35, 34}, {34, 28},
-    };
-
-    Floor floor{
-        .start_room_id = start_room_id,
-        .end_room_id = end_room_id,
-        .current_room_id = start_room_id,
-    };
-    for (const auto& room : rooms)
-        floor.rooms[room.position.y][room.position.x].emplace(Room{.id = room.id, .type = room.type});
-
-    for (const auto& [first, second] : connections)
-    {
-        const auto from = floor.find_position(first);
-        const auto to = floor.find_position(second);
-        if (!from || !to || !floor.connect(*from, *to))
-            throw std::logic_error("Invalid connection in the fixed floor");
-    }
-    return floor;
-}
-}
-
-GameFlowManager::GameFlowManager() : _floor(make_fixed_floor())
+GameFlowManager::GameFlowManager()
 {
     restart();
 }
 
-void GameFlowManager::restart(std::uint64_t run_seed) noexcept
+void GameFlowManager::restart(std::uint64_t run_seed)
 {
-    _floor.seed = run_seed;
-    ELYSIA_LOG_DEBUG("GameFlowManager", "start with seed: " << run_seed);
+    RoomID next_room_id = 0;
+    auto floor = _generator.generate(run_seed, next_room_id, {13,15});
+    const auto start_position = floor.find_position(floor.start_room_id);
+    const auto end_position = floor.find_position(floor.end_room_id);
 
-    for (auto& row : _floor.rooms)
+    if (!start_position || !end_position)
+        throw std::logic_error("Generated floor is missing its start or exit");
+
+    auto& start = *floor.room_at(*start_position);
+    auto& end = *floor.room_at(*end_position);
+        
+    if (start.type != RoomType::Start || end.type != RoomType::End)
+        throw std::logic_error("Generated floor has an invalid start or exit");
+
+    floor.current_room_id = start.id;
+    start.discovered = true;
+    start.visited = true;
+    end.discovered = true;
+    for (const auto& neighbor : floor.neighbors(*start_position))
     {
-        for (auto& room : row)
-        {
-            if (!room)
-                continue;
-
-            room->discovered = false;
-            room->visited = false;
-            room->cleared = false;
-            room->event_triggered = false;
-        }
+        if (neighbor)
+            floor.room_at(*neighbor)->discovered = true;
     }
 
-    _floor.room_at(*_floor.find_position(_floor.end_room_id))->discovered = true;
-    visit_room(*_floor.find_position(_floor.start_room_id));
+    next_room_id = floor.end_room_id + 1;
+    _floor = std::move(floor);
+    _next_room_id = next_room_id;
+    ELYSIA_LOG_DEBUG("GameFlowManager", "start with seed: " << run_seed);
 }
 
 DungeonDepth GameFlowManager::get_current_depth() const noexcept

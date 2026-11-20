@@ -13,10 +13,10 @@ struct DirectionStep
 };
 
 constexpr std::array<DirectionStep, 4> directions{{
-    {RoomDirection::North, RoomDirection::South, 0, -1},
-    {RoomDirection::East, RoomDirection::West, 1, 0},
-    {RoomDirection::South, RoomDirection::North, 0, 1},
-    {RoomDirection::West, RoomDirection::East, -1, 0},
+    {RoomDirection::Up, RoomDirection::Down, 0, -1},
+    {RoomDirection::Right, RoomDirection::Left, 1, 0},
+    {RoomDirection::Down, RoomDirection::Up, 0, 1},
+    {RoomDirection::Left, RoomDirection::Right, -1, 0},
 }};
 
 bool in_bounds(FloorPosition position) noexcept

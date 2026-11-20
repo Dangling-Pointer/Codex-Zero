@@ -1,58 +1,52 @@
 #include "floor_generator.h"
 
-Floor FloorGenerator::generate(std::uint64_t seed)
+#include <limits>
+#include <stdexcept>
+
+Floor FloorGenerator::generate(std::uint64_t seed, RoomID first_room_id,const FloorGenerationConfig& config)
 {
-	_random.set_seed(seed);
+    if (first_room_id == std::numeric_limits<RoomID>::max())
+        throw std::overflow_error("Not enough room IDs for the floor's start and exit");
+
+    _random.set_seed(seed);
+
+    Floor floor{
+        .start_room_id = first_room_id,
+        .end_room_id = first_room_id + 1,
+        .current_room_id = first_room_id,
+        .seed = seed,
+    };
+
+    const FloorPosition start = get_start_pos();
+    floor.rooms[start.y][start.x] = _room_factory.create_start(floor.start_room_id);
+
+    const FloorPosition end = get_end_pos();
+    floor.rooms[end.y][end.x] = _room_factory.create_end(floor.end_room_id);
 
 
-	Floor floor;
-	elysia::core::Vector2 pos;
-
-	pos = get_start_pos();
-
-	Room start;
-	start.accessible_directions = RoomDirection::All;
-
-
-	return {};
+    return floor;
 }
 
-elysia::core::Vector2 FloorGenerator::get_start_pos()
+FloorPosition FloorGenerator::get_start_pos()
 {
-	elysia::core::Vector2 out;
-
-	out.x = _random.int_inclusive(2, 3);
-	out.y = _random.int_inclusive(2, 3);
-
-	return out;
+    return {
+        _random.int_inclusive(2, 3),
+        _random.int_inclusive(2, 3),
+    };
 }
 
-elysia::core::Vector2 FloorGenerator::get_end_pos()
+FloorPosition FloorGenerator::get_end_pos()
 {
-	elysia::core::Vector2 out;
+    // Walk around the perimeter, including each corner exactly once.
+    static_assert(Floor::width == 6 && Floor::height == 6);
 
-	int n = _random.int_inclusive(0, 19);
+    const int index = _random.int_inclusive(0, 19);
+    if (index < 5)
+        return {index, 0};
+    if (index < 10)
+        return {5, index - 5};
+    if (index < 15)
+        return {15 - index, 5};
 
-	if (n < 5)
-	{
-		out.x = n;
-		out.y = 0;// up
-	}
-	else if (n < 10)
-	{
-		out.x = 5;
-		out.y = n - 5;// right
-	}
-	else if (n < 15)
-	{
-		out.x = 15 - n;
-		out.y = 5;// down
-	}
-	else
-	{
-		out.x = 0;
-		out.y = 20 - n;// left
-	}
-
-	return out;
+    return {0, 20 - index};
 }

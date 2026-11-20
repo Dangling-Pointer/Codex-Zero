@@ -108,15 +108,6 @@ void placement()
     rejects([&] { (void)game::player_spawn_near_portal(blocked); }, "blocked center rejected");
 }
 
-std::vector<TileType> layout(const DungeonRoom& map)
-{
-    std::vector<TileType> result;
-    for (const auto& row : map.tile_map().data())
-        for (const auto& tile : row)
-            result.push_back(tile.type);
-    return result;
-}
-
 void click(elysia::scene::SceneManager& manager, int x, int y)
 {
     using namespace elysia::input;
@@ -140,14 +131,99 @@ void click(elysia::scene::SceneManager& manager, int x, int y)
     }
 }
 
+constexpr RoomID start_room_id = 0;
+constexpr RoomID end_room_id = 13;
+
+struct TestRoomDefinition
+{
+    RoomID id;
+    RoomType type;
+    FloorPosition position;
+};
+
+Floor make_fixed_floor()
+{
+    // Grid x increases to the right, and y increases downwards.
+    constexpr TestRoomDefinition rooms[] = {
+        {start_room_id, RoomType::Start, {2, 2}},
+        {1, RoomType::Combat, {2, 1}},
+        {2, RoomType::Combat, {3, 2}},
+        {3, RoomType::Rest, {2, 3}},
+        {4, RoomType::Combat, {1, 2}},
+        {5, RoomType::Event, {3, 1}},
+        {6, RoomType::Elite, {4, 1}},
+        {7, RoomType::Combat, {4, 2}},
+        {8, RoomType::Combat, {5, 2}},
+        {9, RoomType::Event, {2, 0}},
+        {10, RoomType::Shop, {3, 3}},
+        {11, RoomType::Rest, {0, 2}},
+        {12, RoomType::Event, {1, 3}},
+        {end_room_id, RoomType::End, {5, 1}},
+
+        // Fill the remaining cells to exercise the full map layout.
+        {14, RoomType::Rest, {0, 0}},
+        {15, RoomType::Combat, {1, 0}},
+        {16, RoomType::Shop, {3, 0}},
+        {17, RoomType::Combat, {4, 0}},
+        {18, RoomType::Event, {5, 0}},
+        {19, RoomType::Combat, {0, 1}},
+        {20, RoomType::Elite, {1, 1}},
+        {21, RoomType::Event, {0, 3}},
+        {22, RoomType::Elite, {4, 3}},
+        {23, RoomType::Rest, {5, 3}},
+        {24, RoomType::Combat, {0, 4}},
+        {25, RoomType::Rest, {1, 4}},
+        {26, RoomType::Combat, {2, 4}},
+        {27, RoomType::Shop, {3, 4}},
+        {28, RoomType::Combat, {4, 4}},
+        {29, RoomType::Event, {5, 4}},
+        {30, RoomType::Shop, {0, 5}},
+        {31, RoomType::Combat, {1, 5}},
+        {32, RoomType::Event, {2, 5}},
+        {33, RoomType::Elite, {3, 5}},
+        {34, RoomType::Rest, {4, 5}},
+        {35, RoomType::Combat, {5, 5}},
+    };
+
+    constexpr std::pair<RoomID, RoomID> connections[] = {
+        {0, 1}, {1, 5}, {5, 6}, {6, 13}, // Upper route
+        {0, 2}, {2, 7}, {7, 8}, {8, 13}, // Right route
+        {2, 5}, {6, 7},                  // Links between routes
+        {0, 3}, {3, 12}, {12, 4}, {4, 0}, // Southwest loop
+        {1, 9}, {3, 10}, {4, 11},         // Side branches
+
+        {9, 15}, {15, 14}, {14, 19}, {19, 20},
+        {9, 16}, {16, 17}, {17, 18},
+        {11, 21}, {21, 24}, {24, 30}, {30, 31}, {31, 25},
+        {25, 26}, {26, 32}, {32, 33}, {33, 27},
+        {10, 22}, {22, 23}, {23, 29}, {29, 35}, {35, 34}, {34, 28},
+    };
+
+    Floor floor{
+        .start_room_id = start_room_id,
+        .end_room_id = end_room_id,
+        .current_room_id = start_room_id,
+    };
+    for (const auto& room : rooms)
+        floor.rooms[room.position.y][room.position.x].emplace(Room{.id = room.id, .type = room.type});
+
+    for (const auto& [first, second] : connections)
+    {
+        const auto from = floor.find_position(first);
+        const auto to = floor.find_position(second);
+        if (!from || !to || !floor.connect(*from, *to))
+            throw std::logic_error("Invalid connection in the fixed floor");
+    }
+    return floor;
+}
+
 void fixed_floor_topology()
 {
-    const GameFlowManager flow;
-    const auto& floor = flow.current_floor();
+    const auto floor = make_fixed_floor();
     check(floor.rooms.size() == 6 && floor.rooms.front().size() == 6, "floor uses a 6 by 6 grid");
     check(floor.start_room_id == 0 && floor.end_room_id == 13, "start and exit retain their IDs");
     check(floor.find_position(0) == FloorPosition{2, 2}, "start is at the translated grid position");
-    check(!flow.find_room(36) && !flow.find_room(std::numeric_limits<RoomID>::max()),
+    check(!floor.find_position(36) && !floor.find_position(std::numeric_limits<RoomID>::max()),
           "unknown IDs do not resolve to a room");
     check(!floor.room_at({-1, 2}) && !floor.room_at({6, 2}) && !Floor{}.room_at({0, 0}),
           "room lookup handles the edges and empty cells");
@@ -218,11 +294,14 @@ void floor_map_directions()
     using elysia::core::UiRenderCommand;
     using elysia::core::UiRenderCommandType;
 
-    GameFlowManager flow;
+    auto floor = make_fixed_floor();
+    floor.room_at(*floor.find_position(0))->visited = true;
+    for (RoomID id : {0, 1, 2, 3, 4, 13})
+        floor.room_at(*floor.find_position(id))->discovered = true;
+
+    const auto can_enter_room = [](RoomID) { return false; };
     const auto draw_map = [&] {
-        FloorMapView view(Rect{0, 0, 1280, 720}, flow.current_floor(),
-                          [&](RoomID id) { return flow.can_enter_room(id); },
-                          [](RoomID) {});
+        FloorMapView view(Rect{0, 0, 1280, 720}, floor, can_enter_room, [](RoomID) {});
         std::vector<UiRenderCommand> commands;
         view.submit_ui_render_commands(commands);
         return commands;
@@ -238,15 +317,20 @@ void floor_map_directions()
         && line_count(start, elysia::core::colors::gray_300) == 16,
         "the starting map shows arrows in both directions on each revealed connection");
 
-    check(flow.try_enter_room(1), "the first room can be entered");
+    floor.current_room_id = 1;
+    floor.room_at(*floor.find_position(1))->visited = true;
+    for (const auto& neighbor : floor.neighbors(*floor.find_position(1)))
+    {
+        if (neighbor)
+            floor.room_at(*neighbor)->discovered = true;
+    }
     const auto explored = draw_map();
     check(line_count(explored, elysia::core::colors::gray_500) == 6
         && line_count(explored, elysia::core::colors::gray_300) == 24,
         "exploration reveals new direction markers with their connections");
 
     const Rect viewport{0, 0, 1280, 720};
-    FloorMapView preview(viewport, flow.current_floor(),
-                         [&](RoomID id) { return flow.can_enter_room(id); },
+    FloorMapView preview(viewport, floor, can_enter_room,
                          [](RoomID) {}, FloorMapView::Visibility::ShowAll);
     std::vector<UiRenderCommand> preview_commands;
     preview.submit_ui_render_commands(preview_commands);
@@ -332,6 +416,134 @@ void sparse_floor_connections()
           "long connections respect the hidden destination");
 }
 
+void check_skeleton(const Floor& floor, std::uint64_t seed, RoomID first_id)
+{
+    check(floor.seed == seed && floor.start_room_id == first_id
+        && floor.end_room_id == first_id + 1 && floor.current_room_id == first_id,
+        "generated floor metadata agrees with its seed and room IDs");
+
+    const auto start = floor.find_position(first_id);
+    const auto end = floor.find_position(first_id + 1);
+    check(start && end, "both generated room IDs resolve to occupied cells");
+    check(start->x >= 2 && start->x <= 3 && start->y >= 2 && start->y <= 3,
+          "start occupies one of the central four cells");
+    check(end->x == 0 || end->x == 5 || end->y == 0 || end->y == 5,
+          "exit occupies one of the twenty perimeter cells");
+    check(floor.room_at(*start)->type == RoomType::Start
+        && floor.room_at(*end)->type == RoomType::End, "generated endpoints have the right types");
+
+    int room_count = 0;
+    for (int y = 0; y < Floor::height; ++y)
+    {
+        for (int x = 0; x < Floor::width; ++x)
+        {
+            const auto* room = floor.room_at({x, y});
+            if (!room)
+                continue;
+
+            ++room_count;
+            check(!room->discovered && !room->visited && !room->cleared && !room->event_triggered,
+                  "generation initializes every room state");
+            const auto neighbors = floor.neighbors({x, y});
+            check(std::ranges::none_of(neighbors, [](const auto& neighbor) { return neighbor.has_value(); }),
+                  "the skeleton contains no traversable connections");
+        }
+    }
+    check(room_count == 2, "generation creates exactly two rooms");
+}
+
+void generated_floor_skeleton()
+{
+    const RoomFactory factory;
+    const auto event = factory.create(17, RoomType::Event, RoomDirection::Left, "sealed_chest");
+    check(event.id == 17 && event.type == RoomType::Event && event.content_id == "sealed_chest"
+        && event.accessible_directions == RoomDirection::Left, "factory preserves the caller's room data");
+    check(!event.discovered && !event.visited && !event.cleared && !event.event_triggered,
+          "factory initializes exploration, combat and event state");
+    check(factory.create_start(100).id == 100 && factory.create_end(101).id == 101
+        && factory.create_test_room(102).id == 102, "factory helpers use explicit IDs");
+
+    FloorGenerator generator;
+    const auto first = generator.generate(42, 0);
+    const auto offset = generator.generate(42, 100);
+    (void)generator.generate(43, 500);
+    const auto repeated = generator.generate(42, 0);
+    check_skeleton(first, 42, 0);
+    check_skeleton(offset, 42, 100);
+    check_skeleton(repeated, 42, 0);
+    for (int y = 0; y < Floor::height; ++y)
+    {
+        for (int x = 0; x < Floor::width; ++x)
+        {
+            const auto* original = first.room_at({x, y});
+            const auto* shifted = offset.room_at({x, y});
+            const auto* replay = repeated.room_at({x, y});
+            check(bool(original) == bool(shifted) && bool(original) == bool(replay),
+                  "room ID offsets and generator reuse preserve seeded positions");
+            if (!original)
+                continue;
+
+            check(original->id == replay->id && shifted->id == original->id + 100
+                && original->type == replay->type && original->type == shifted->type
+                && original->accessible_directions == replay->accessible_directions
+                && original->accessible_directions == shifted->accessible_directions,
+                "repeated generation preserves room contents while IDs shift explicitly");
+        }
+    }
+    for (std::uint64_t seed = 0; seed < 64; ++seed)
+        check_skeleton(generator.generate(seed, 0), seed, 0);
+
+    const auto max_id = std::numeric_limits<RoomID>::max();
+    rejects([&] { (void)generator.generate(42, max_id); }, "room ID increment overflow is rejected");
+    check_skeleton(generator.generate(42, max_id - 1), 42, max_id - 1);
+    check_skeleton(generator.generate(42, 0), 42, 0);
+
+    GameFlowManager flow;
+    check(flow.get_current_room_id() == 0 && flow.get_current_room_type() == RoomType::Start,
+          "constructor creates a valid starting room");
+    for (const std::uint64_t seed : {42, 43, 42})
+    {
+        flow.mark_current_room_cleared();
+        flow.restart(seed);
+        const auto& floor = flow.current_floor();
+        const auto* start = flow.find_room(0);
+        const auto* end = flow.find_room(1);
+        check(start && end && floor.start_room_id == 0 && floor.end_room_id == 1
+            && floor.current_room_id == 0 && floor.seed == seed,
+            "every restart resets room numbering and floor metadata");
+        check(start->type == RoomType::Start && start->discovered && start->visited
+            && !start->cleared && !start->event_triggered, "restart resets and visits the start");
+        check(end->type == RoomType::End && end->discovered && !end->visited
+            && !end->cleared && !end->event_triggered, "restart reveals the unvisited exit");
+        check(flow.get_current_depth() == 0 && flow.room_seed(1) == seed + 1,
+              "single-floor depth and room terrain seeds remain consistent");
+        check(!flow.find_room(2) && !flow.can_enter_room(0) && !flow.can_enter_room(1)
+            && !flow.can_enter_room(max_id) && !flow.try_enter_room(1),
+            "unconnected exit and invalid IDs cannot be selected");
+    }
+}
+
+void press_escape(elysia::scene::SceneManager& manager)
+{
+    using namespace elysia::input;
+    RawInputState keyboard;
+    for (const auto type : {RawInputEventType::ControlPressed, RawInputEventType::ControlReleased})
+    {
+        const RawInputEvent event{
+            .control = RawInputControl::KeyEscape,
+            .type = type,
+            .device = InputDevice::Keyboard,
+            .source = InputSourceId::keyboard(),
+        };
+        InputSnapshot snapshot;
+        snapshot.sources = {{.source = event.source, .initial_state = keyboard}};
+        apply_raw_event(keyboard, event);
+        snapshot.sources.front().frame.state = keyboard;
+        snapshot.events = {event};
+        manager.on_input(snapshot);
+    }
+}
+
 void single_floor_run()
 {
     using elysia::scene::SceneManager;
@@ -342,137 +554,72 @@ void single_floor_run()
     SceneManager manager;
     manager.initialize(context);
     GameModule{}.register_scenes(manager);
-    flow.restart(42);
-    manager.start(make_run_room_route(0, initial_character));
-    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 0,
-          "run opens the fixed starting room");
-    for (RoomID id = 0; id < 36; ++id)
-    {
-        const auto* room = flow.find_room(id);
-        check(room && room->discovered == (id <= 4 || id == 13) && room->visited == (id == 0),
-              "initial fog shows the start, neighbors and exit");
-    }
+    manager.start({.target = MainMenu});
 
     const auto* query = ELYSIA_OBJECT_QUERY;
-    const auto* start_map = query->find_object<DungeonRoom>();
-    check(start_map && start_map->columns() == 15 && start_map->rows() == 15, "fixed start room dimensions");
-    check(query->find_objects<Enemy>().empty(), "start room is safe");
-    const auto enter_portal = [&] {
+    for (int run = 0; run < 3; ++run)
+    {
+        click(manager, 640, 281); // Start below the logo.
+        manager.on_update(0);
+        check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 0
+            && flow.get_current_room_type() == RoomType::Start,
+            "menu Start repeatedly opens a valid starting room");
+        const auto* start_map = query->find_object<DungeonRoom>();
+        check(start_map && start_map->columns() == 15 && start_map->rows() == 15,
+              "fixed start room dimensions");
+        check(query->find_objects<Enemy>().empty(), "start room is safe");
         auto* player = query->find_object<PlayerCharacter>();
         const auto* portal = query->find_object<Portal>();
-        check(player && portal, "active room has a player and portal");
+        check(player && portal && player->health() == initial_character.health,
+              "each new run creates a fresh player and portal");
         player->set_position(portal->position());
         manager.on_update(0);
-    };
-    enter_portal();
-    check(manager.current_scene_key() == FloorMap, "start portal opens the map");
-    click(manager, 1025, 206);
-    click(manager, 717, 206);
-    check(manager.current_scene_key() == FloorMap && flow.get_current_room_id() == 0,
-          "visible but unreachable rooms do not request a route");
+        check(manager.current_scene_key() == FloorMap, "start portal opens the skeleton map");
 
-    click(manager, 563, 206);
-    check(manager.current_scene_key() == CombatRoom && flow.get_current_room_id() == 0,
-          "selection loads the battle room before committing movement");
-    manager.on_update(0);
-    check(flow.get_current_room_id() == 1 && flow.find_room(5)->discovered && !flow.find_room(5)->visited,
-          "active room commits the move and reveals its neighbors");
-    const auto* first_map = query->find_object<DungeonRoom>();
-    check(first_map != nullptr, "combat room has a map");
-    const auto first_layout = layout(*first_map);
-    const auto enemies = query->find_objects<Enemy>();
-    check(!enemies.empty(), "first visit spawns enemies");
-    enter_portal();
-    check(manager.current_scene_key() == CombatRoom && !query->find_object<Portal>()->is_reached(),
-          "living enemies block the portal without consuming it");
-    auto* player = query->find_object<PlayerCharacter>();
-    player->receive_attack({0, 0, 10});
-    const float health = player->health();
-    check(health < initial_character.health && health > 0, "test damaged the player");
-    for (auto* enemy : enemies)
-        enemy->receive_attack({0, 0, enemy->max_health()});
-    manager.on_update(0);
-    check(manager.current_scene_key() == FloorMap && flow.find_room(1)->cleared,
-          "defeated enemies enable the portal and mark the room cleared");
-    click(manager, 563, 309);
-    manager.on_update(0);
-    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 0,
-          "visited start can be reentered");
-    check(query->find_object<PlayerCharacter>()->health() == health, "health survives scene transitions");
-    enter_portal();
-    click(manager, 563, 206);
-    manager.on_update(0);
-    check(manager.current_scene_key() == CombatRoom && flow.get_current_room_id() == 1,
-          "cleared combat room remains selectable");
-    check(query->find_objects<Enemy>().empty(), "cleared combat does not respawn enemies");
-    check(layout(*query->find_object<DungeonRoom>()) == first_layout, "revisit retains seeded terrain");
+        const auto& floor = flow.current_floor();
+        FloorMapView preview(Rect{0, 0, 1280, 720}, floor,
+                             [&flow](RoomID id) { return flow.can_enter_room(id); }, [](RoomID) {});
+        int button_count = 0;
+        for (std::size_t i = 0; i < preview.child_count(); ++i)
+        {
+            const auto* button = dynamic_cast<const elysia::ui::UiButton*>(preview.child_at(i));
+            if (!button)
+                continue;
 
-    enter_portal();
-    click(manager, 717, 206);
-    manager.on_update(0);
-    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 5, "event uses a fixed room");
-    enter_portal();
-    click(manager, 1025, 206); // The visible exit is beyond unvisited rooms.
-    click(manager, 717, 206); // The current room.
-    check(manager.current_scene_key() == FloorMap && flow.get_current_room_id() == 5,
-          "routes through unvisited rooms and the current room remain disabled");
+            ++button_count;
+            check(!button->is_enabled(), "current start and unconnected exit buttons are disabled");
+            const auto center = button->screen_rect().center();
+            click(manager, static_cast<int>(center.x), static_cast<int>(center.y));
+        }
+        manager.on_update(0);
+        check(button_count == 2 && manager.current_scene_key() == FloorMap
+            && flow.get_current_room_id() == 0 && !flow.find_room(1)->visited,
+            "both endpoints are visible and clicking them cannot leave the skeleton map");
 
-    check(flow.find_room(9)->discovered && !flow.find_room(9)->visited, "room 9 is visible but unvisited");
-    click(manager, 563, 103); // Room 9 is reachable through visited room 1.
-    manager.on_update(0);
-    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 9
-        && flow.find_room(9)->visited && query->find_object<PlayerCharacter>()->health() == health,
-        "reachable unexplored room can be selected through a visited room");
-    enter_portal();
-
-    click(manager, 563, 309);
-    manager.on_update(0);
-    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 0
-        && query->find_object<PlayerCharacter>()->health() == health,
-        "visited non-neighbor can be selected directly with player state intact");
-    enter_portal();
-    click(manager, 717, 206);
-    manager.on_update(0);
-    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 5,
-          "fast travel works in both directions between visited rooms");
-    enter_portal();
-    click(manager, 871, 206);
-    manager.on_update(0);
-    check(manager.current_scene_key() == CombatRoom && flow.get_current_room_id() == 6, "elite routes to combat");
-    for (auto* enemy : query->find_objects<Enemy>())
-        enemy->receive_attack({0, 0, enemy->max_health()});
-    enter_portal();
-    click(manager, 1025, 206);
-    manager.on_update(0);
-    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 13, "route reaches the exit");
-    enter_portal();
-    check(manager.current_scene_key() == MainMenu, "exit portal returns directly to the main menu");
+        flow.mark_current_room_cleared();
+        press_escape(manager);
+        manager.on_update(0);
+        check(manager.current_scene_key() == MainMenu, "map Escape returns to the menu for another Start");
+    }
 
     click(manager, 1155, 38); // Top-right test entry.
-    check(manager.current_scene_key() == Game && flow.get_current_room_id() == 13,
-          "menu test launches GameScene outside the run");
-    manager.on_scene_request({elysia::scene::SceneRequestType::Switch, {.target = MainMenu}});
+    check(manager.current_scene_key() == Game && flow.get_current_room_id() == 0,
+          "menu test still launches GameScene outside the run");
+    press_escape(manager);
     manager.on_update(0);
-    click(manager, 640, 281); // Start below the logo.
-    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 0
-        && !flow.find_room(1)->cleared && !flow.find_room(5)->discovered,
-        "menu Start creates a fresh run");
+    check(manager.current_scene_key() == MainMenu, "test scene returns to the menu");
 
     flow.restart(43);
-    check(flow.get_current_room_id() == 0 && flow.room_seed(1) == 44 && !flow.find_room(1)->cleared
-        && !flow.find_room(5)->discovered, "restart resets clears, fog and seed");
-
-    auto failed_route = make_run_room_route(1, initial_character, 0);
+    auto failed_route = make_run_room_route(flow.get_current_room_id(), initial_character);
     auto room = *elysia::scene::try_scene_payload<RoomScenePayload>(failed_route.payload);
     room.room.map_config.baseRoomSize = {2, 2};
     room.room.map_config.numSubRooms = 0;
     failed_route.payload = room;
     manager.on_scene_request({elysia::scene::SceneRequestType::Switch, failed_route});
     manager.on_update(0);
-    check(manager.current_scene_key() != CombatRoom && flow.get_current_room_id() == 0
-        && !flow.find_room(1)->visited && !flow.find_room(5)->discovered, "failed room load leaves exploration untouched");
+    check(manager.current_scene_key() != FixedRoom && flow.get_current_room_id() == 0
+        && !flow.find_room(1)->visited, "failed room load leaves the generated floor untouched");
 }
-
 template<class T> std::vector<T*> objects(elysia::scene::Scene& scene)
 {
     std::vector<T*> result;
@@ -562,6 +709,7 @@ int main()
         placement();
         room_portal<CombatScene>(RoomScenePayload{
             *CharacterManager::instance()->create_context("default_player"), {}});
+        generated_floor_skeleton();
         fixed_floor_topology();
         floor_map_directions();
         sparse_floor_connections();
