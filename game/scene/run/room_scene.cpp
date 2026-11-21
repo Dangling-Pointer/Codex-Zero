@@ -9,10 +9,12 @@
 #include "game/gameflow/game_flow_manager.h"
 #include "game/map/room_placement.h"
 #include "game/objcets/portal.h"
+#include "game/objcets/gate.h"
 #include "game/scene/gameplay_setup.h"
 #include "game/scene/scene_keys.h"
 #include "game/ui/floor_minimap_hud.h"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -58,6 +60,8 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
     _config = incoming->room;
     _room_id = incoming->room_id;
     _from_room = incoming->from_room;
+    const auto* room = run_room();
+    _start_gate_delay = room && room->type == RoomType::Start && !_from_room ? 1.0 : 0.0;
 
     resume();
 
@@ -72,6 +76,7 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
             game::restore_boundary_entry(*incoming->boundary_entry, _room.corridors,
                                          *_room.collision_world, *_player);
         create_room_content();
+        create_corridor_gates();
 
         game::initialize_room_camera(camera_runtime(), *_player, incoming->boundary_entry);
 
@@ -143,6 +148,7 @@ void RoomScene::clear_room() noexcept
 {
     _active = false;
     _transition_requested = false;
+    _start_gate_delay = 0;
     _previous_player_center = {};
     if (_minimap)
         _minimap->destroy();
@@ -159,6 +165,7 @@ void RoomScene::clear_room() noexcept
         });
     _player = nullptr;
     _portal = nullptr;
+    _gates.clear();
     _room = {};
     _config = {};
     _room_id.reset();
@@ -178,7 +185,34 @@ void RoomScene::on_before_update(double delta)
     }
 
     if (_active && !_paused)
+    {
+        _start_gate_delay = std::max(0.0, _start_gate_delay - std::max(0.0, delta));
+        update_gates();
         _projectiles.update(delta);
+    }
+}
+
+void RoomScene::create_corridor_gates()
+{
+    const auto tile = _room.collision_world->tile_size();
+    const bool raised = _start_gate_delay > 0 || !can_leave_room();
+    for (const auto& corridor : _room.corridors)
+    {
+        const auto strip = corridor.gate_strip(tile);
+        for (float y = strip.top(); y < strip.bottom(); y += tile.y)
+            for (float x = strip.left(); x < strip.right(); x += tile.x)
+                _gates.push_back(create_and_add_object<Gate>(elysia::core::Vector2{x, y}, raised));
+    }
+}
+
+void RoomScene::update_gates()
+{
+    if (_gates.empty())
+        return;
+    const bool raised = _start_gate_delay > 0 || !can_leave_room();
+    for (auto* gate : _gates)
+        if (!gate->is_destroyed())
+            gate->set_raised(raised);
 }
 
 void RoomScene::on_after_update(double)
@@ -297,6 +331,8 @@ void RoomScene::on_control_target_removing(elysia::core::SceneObject& object)
         _portal = nullptr;
     if (&object == _minimap)
         _minimap = nullptr;
+    if (auto* gate = dynamic_cast<Gate*>(&object))
+        std::erase(_gates, gate);
     if (&object == _room.map)
     {
         if (_room.collision_world)

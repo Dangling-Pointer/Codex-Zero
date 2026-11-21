@@ -18,6 +18,7 @@ struct RoomCorridorLayout
     elysia::core::Rect walkable;
 
     [[nodiscard]] elysia::core::Vector2 seam_center() const noexcept { return walkable.center(); }
+    [[nodiscard]] elysia::core::Rect gate_strip(elysia::core::Vector2 tile_size) const noexcept;
     [[nodiscard]] bool crossed_outward(elysia::core::Vector2 previous,
                                        elysia::core::Vector2 current,
                                        const elysia::core::Rect& body_at_current) const noexcept;

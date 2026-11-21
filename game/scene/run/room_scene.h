@@ -11,6 +11,7 @@
 class PlayerCharacter;
 class Portal;
 class FloorMinimapHud;
+class Gate;
 
 // Observers of scene-owned objects; ownership stays with Scene.
 struct RoomBuildResult
@@ -65,6 +66,8 @@ private:
     void leave_through_portal();
     [[nodiscard]] bool try_leave_through_boundary();
     void update_minimap();
+    void create_corridor_gates();
+    void update_gates();
 
     std::optional<RoomID> _room_id;
     std::optional<RoomID> _from_room;
@@ -74,12 +77,14 @@ private:
 
     Portal* _portal = nullptr;
     FloorMinimapHud* _minimap = nullptr;
+    std::vector<Gate*> _gates; // Scene-owned observers, like the player and portal.
 
     RoomBuildResult _room;
     RoomBuildConfig _config;
 
     bool _active = false;
     bool _transition_requested = false;
+    double _start_gate_delay = 0;
     elysia::core::Vector2 _previous_player_center;
 
     Wand _test_wand;

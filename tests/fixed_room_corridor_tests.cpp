@@ -7,6 +7,7 @@
 #include "game/characters/character_manager.h"
 #include "game/characters/player_character.h"
 #include "game/objcets/portal.h"
+#include "game/objcets/gate.h"
 #include "game/ui/floor_minimap_hud.h"
 #include "engine/object_query/game_object_query_service.h"
 
@@ -106,6 +107,7 @@ struct BoundaryObservation
     RoomScene* scene = nullptr;
     FloorMinimapHud* hud = nullptr;
     int active_huds = 0;
+    bool room_locked = false;
     int builds = 0;
     Vector2 center;
     PlayerMotionState motion;
@@ -133,6 +135,8 @@ public:
     }
 
 protected:
+    bool can_leave_room() const override { return !_observation.room_locked; }
+
     void on_scene_object_registered(elysia::core::SceneObject& object) override
     {
         RoomScene::on_scene_object_registered(object);
@@ -248,9 +252,12 @@ public:
             && observation.scene->camera().zoom() == observation.zoom,
               "camera keeps the player's screen position and zoom on the entry frame");
         check(flow.get_current_room_id() == from, "floor is committed only after scene construction succeeds");
-        check(player().physics_world()->registered_object_count() == 1
+        const auto gates = ELYSIA_OBJECT_QUERY->find_objects<Gate>();
+        check(player().physics_world()->registered_object_count() == 1 + gates.size()
             && ELYSIA_OBJECT_QUERY->find_objects<PlayerCharacter>().size() == 1,
-              "same-key reuse has one live player and physics body");
+              "same-key reuse keeps one player and exactly the corridor gate bodies");
+        check(gates.size() == map().corridors().size() * kStandardRoomCorridors.width
+            && std::ranges::none_of(gates, &Gate::is_raised), "Event room gate rows are lowered and traversable");
         check(observation.active_huds == 1 && observation.hud && !observation.hud->is_destroyed(),
               "same-key room reuse keeps one live minimap");
         std::vector<elysia::core::UiRenderCommand> hud_commands;
@@ -273,6 +280,75 @@ public:
         check(player().velocity().is_zero(), "releasing a transferred key stops movement");
     }
 };
+
+void start_gate_delay()
+{
+    BoundaryTestRun run;
+    const auto gates_raised = [&] {
+        const auto gates = ELYSIA_OBJECT_QUERY->find_objects<Gate>();
+        check(gates.size() == 20, "Start has four rows of five gates");
+        return std::ranges::all_of(gates, &Gate::is_raised);
+    };
+    check(gates_raised(), "Start gates are raised on the first frame");
+    for (const auto* gate : ELYSIA_OBJECT_QUERY->find_objects<Gate>())
+        check(gate->render_rect().height() == 64, "Start gates begin visually raised without an opening animation");
+
+    const auto strip = corridor(run.map(), RoomDirection::Right).gate_strip(run.map().tile_size());
+    const Vector2 start_center{strip.left() - 16, strip.center().y};
+    check(run.player().physics_world()->teleport_object(run.player().physics_handle(),
+        start_center - run.player().size() * 0.5f), "place the player inside the Start gate row");
+    run.update(0);
+    run.keys({Key::KeyD});
+    run.update(0.25);
+    check(gates_raised(), "Start gates remain raised during the opening delay");
+    check(run.player().blocking_bounds().right() <= strip.left() + 1.0f,
+          "Start gates physically block the player during the opening delay");
+
+    run.observation.scene->pause();
+    run.update(2);
+    check(gates_raised(), "paused time does not consume the opening delay");
+    run.observation.scene->resume();
+    run.keys({});
+    run.update(0.5);
+    run.update(0.125);
+    check(gates_raised(), "gates remain raised before one second of active game time");
+    run.update(0.125);
+    check(std::ranges::none_of(ELYSIA_OBJECT_QUERY->find_objects<Gate>(), &Gate::is_raised),
+          "all gates lower after exactly one active second");
+    for (const auto* gate : ELYSIA_OBJECT_QUERY->find_objects<Gate>())
+    {
+        std::vector<elysia::core::RenderCommand> commands;
+        gate->submit_render_commands(commands);
+        check(commands.size() == 2 && commands.back().command_rect.height() == 32,
+              "Start gates are halfway through lowering at this animation frame");
+    }
+    run.keys({Key::KeyD});
+    for (int frame = 0; frame < 24; ++frame)
+        run.update(1.0 / 60.0);
+    for (const auto* gate : ELYSIA_OBJECT_QUERY->find_objects<Gate>())
+        check(gate->render_rect() == gate->world_rect(), "Start's lowering animation reaches its resting endpoint");
+    check(run.player().blocking_bounds().left() > strip.right(), "the lowered Start gate row allows passage");
+    run.keys({});
+
+    run.cross(RoomDirection::Right);
+    run.cross(RoomDirection::Left);
+    check(std::ranges::none_of(ELYSIA_OBJECT_QUERY->find_objects<Gate>(), &Gate::is_raised),
+          "returning to Start does not repeat the opening delay");
+
+    auto& flow = *GameFlowManager::instance();
+    const auto character = run.player().capture_context();
+    flow.restart(43);
+    run.manager.on_scene_request({elysia::scene::SceneRequestType::Switch, make_run_room_route(0, character)});
+    run.update(0);
+    check(gates_raised(), "a new run rearms the delay even when reusing the Start scene");
+    run.observation.room_locked = true;
+    run.update(1);
+    check(gates_raised(), "room restrictions still hold the gates after the delay expires");
+    run.observation.room_locked = false;
+    run.update(0);
+    check(std::ranges::none_of(ELYSIA_OBJECT_QUERY->find_objects<Gate>(), &Gate::is_raised),
+          "normal room control resumes once the opening delay ends");
+}
 
 void invalid_entries()
 {
@@ -365,6 +441,7 @@ void boundary_transitions()
 void fixed_room_corridor_tests()
 {
     geometry();
+    start_gate_delay();
     boundary_transitions();
     exact_midpoint_and_reverse();
     invalid_entries();

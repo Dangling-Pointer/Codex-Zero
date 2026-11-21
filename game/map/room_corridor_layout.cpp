@@ -36,6 +36,23 @@ RoomDirection opposite_direction(RoomDirection direction) noexcept
     }
 }
 
+Rect RoomCorridorLayout::gate_strip(Vector2 tile_size) const noexcept
+{
+    // The net strip begins at the original room wall, before its corridor half.
+    switch (direction)
+    {
+    case RoomDirection::Up:
+        return {walkable.left(), walkable.bottom() - tile_size.y, walkable.width(), tile_size.y};
+    case RoomDirection::Right:
+        return {walkable.left(), walkable.top(), tile_size.x, walkable.height()};
+    case RoomDirection::Down:
+        return {walkable.left(), walkable.top(), walkable.width(), tile_size.y};
+    case RoomDirection::Left:
+        return {walkable.right() - tile_size.x, walkable.top(), tile_size.x, walkable.height()};
+    default: return {};
+    }
+}
+
 bool RoomCorridorLayout::crossed_outward(Vector2 previous, Vector2 current,
                                          const Rect& body_at_current) const noexcept
 {

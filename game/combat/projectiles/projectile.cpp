@@ -57,12 +57,12 @@ void Projectile::on_collision_event(
     const auto &other = event.contact.pair.first == target
                             ? event.contact.pair.second
                             : event.contact.pair.first;
-    // Character contacts are routed once through CombatSystem's HitBox/HurtBox path
-    if (other.kind == elysia::physics::CollisionTargetKind::Collider) return;
-    const bool handled = other.kind == elysia::physics::CollisionTargetKind::Collider
-                             ? on_entity_collision(event)
-                             : on_collision(event);
-    if (handled)
+    // HurtBox overlaps go through CombatSystem once. Solid colliders (e.g. gates)
+    // use the same world-impact behaviors as tile walls.
+    if (other.kind == elysia::physics::CollisionTargetKind::Collider
+        && event.contact.response != elysia::physics::CollisionResponse::Block)
+        return;
+    if (on_collision(event))
         destroy();
 }
 

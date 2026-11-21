@@ -20,8 +20,7 @@ private:
     [[nodiscard]] elysia::core::Vector2 screen_position(elysia::core::Vector2 grid) const noexcept;
 
     const Floor& _floor;
-    elysia::core::Vector2 _grid_center;
-    float _spacing = 32;
+    static constexpr float kGridSpacing = 64; // A local view, roughly three grid cells across.
     std::optional<elysia::core::Vector2> _player_grid;
     std::optional<RoomID> _current_room;
 };

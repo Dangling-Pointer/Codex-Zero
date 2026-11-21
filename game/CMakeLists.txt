@@ -1,4 +1,5 @@
 file(GLOB_RECURSE GAME CONFIGURE_DEPENDS "*.cpp")
+file(GLOB_RECURSE GAME CONFIGURE_DEPENDS "*.cpp")
 
 add_library(game_lib ${GAME})
 

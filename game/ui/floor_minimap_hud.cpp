@@ -37,28 +37,11 @@ Color room_color(RoomType type)
 FloorMinimapHud::FloorMinimapHud(const elysia::core::Rect& bounds, const Floor& floor)
     : UiElement(bounds, 10), _floor(floor)
 {
-    int left = Floor::width, top = Floor::height, right = -1, bottom = -1;
-    for (int y = 0; y < Floor::height; ++y)
-        for (int x = 0; x < Floor::width; ++x)
-            if (floor.room_at({x, y}))
-            {
-                left = std::min(left, x);
-                right = std::max(right, x);
-                top = std::min(top, y);
-                bottom = std::max(bottom, y);
-            }
-    if (right < left)
-        return;
-
-    _grid_center = {(left + right) * 0.5f, (top + bottom) * 0.5f};
-    _spacing = std::max(1.0f, std::min({32.0f,
-        (bounds.width() - 44) / std::max(1, right - left),
-        (bounds.height() - 44) / std::max(1, bottom - top)}));
 }
 
 Vector2 FloorMinimapHud::screen_position(Vector2 grid) const noexcept
 {
-    return screen_rect().center() + (grid - _grid_center) * _spacing;
+    return screen_rect().center() + (grid - _player_grid.value_or(Vector2{})) * kGridSpacing;
 }
 
 void FloorMinimapHud::set_player_location(
@@ -100,10 +83,11 @@ void FloorMinimapHud::submit_ui_render_commands(std::vector<elysia::core::UiRend
 {
     using namespace elysia::core;
     commands.push_back(make_ui_fill_rect_command(screen_rect(), Color{235, 238, 240, 215}, 8));
+    const auto map_begin = commands.size();
     constexpr UiStrokeWidth line_width{UiStrokeWidthMode::Logical, 3};
-    const float block_size = std::min(16.0f, _spacing * 0.5f);
+    constexpr float block_size = 16;
 
-    // Show the whole floor for this first test version, including long links across empty cells.
+    // Keep all topology, but clip its player-centered projection to the HUD viewport.
     for (int y = 0; y < Floor::height; ++y)
         for (int x = 0; x < Floor::width; ++x)
         {
@@ -136,4 +120,7 @@ void FloorMinimapHud::submit_ui_render_commands(std::vector<elysia::core::UiRend
         commands.push_back(make_ui_fill_circle_command(marker, 5, colors::white));
         commands.push_back(make_ui_fill_circle_command(marker, 3.5f, colors::red_500));
     }
+    const Rect clip{screen_rect().position() + Vector2{8, 8}, screen_rect().size() - Vector2{16, 16}};
+    for (std::size_t i = map_begin; i < commands.size(); ++i)
+        set_ui_command_clip_rect(commands[i], clip);
 }

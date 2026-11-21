@@ -23,6 +23,19 @@ Vector2 marker(const FloorMinimapHud& hud)
     return commands.back().circle_center;
 }
 
+Vector2 room_center(const FloorMinimapHud& hud, std::size_t index)
+{
+    std::vector<UiRenderCommand> commands;
+    hud.submit_ui_render_commands(commands);
+    for (const auto& command : commands)
+        if (command.type == UiRenderCommandType::FillRoundedRect && command.corner_radius == 3)
+        {
+            if (index == 0) return command.screen_rect.center();
+            --index;
+        }
+    throw std::runtime_error("Expected minimap room block");
+}
+
 void layout_and_mapping()
 {
     Floor floor;
@@ -32,11 +45,12 @@ void layout_and_mapping()
     check(floor.connect({0, 0}, {3, 0}) && floor.connect({0, 0}, {0, 3}), "connect sparse L-shaped HUD fixture");
     FloorMinimapHud hud({0, 0, 220, 220}, floor);
     hud.set_player_location(0, {}, {});
-    const auto start = marker(hud);
+    const auto start = room_center(hud, 0);
+    const auto right = room_center(hud, 1);
+    const auto down = room_center(hud, 2);
+    check(marker(hud).nearly_equals(hud.screen_rect().center()), "the red dot is centered on the HUD");
     hud.set_player_location(1, {}, {});
-    const auto right = marker(hud);
-    hud.set_player_location(2, {}, {});
-    const auto down = marker(hud);
+    check(room_center(hud, 1).nearly_equals(hud.screen_rect().center()), "entering another room pans the map");
     check(start.x == down.x && start.y == right.y && right.x > start.x && down.y > start.y,
           "room blocks retain the floor's L shape and empty-cell spacing");
 
@@ -50,16 +64,21 @@ void layout_and_mapping()
     hud.set_player_location(0, {100, 35}, {&exit, 1});
     check(marker(hud).nearly_equals(start), "at the room mouth the marker remains on its room");
     hud.set_player_location(0, {150, 35}, {&exit, 1});
-    check(marker(hud).nearly_equals(start + (right - start) * 0.25f), "halfway to the seam maps to a quarter edge");
+    check(marker(hud).nearly_equals(room_center(hud, 0) + (right - start) * 0.25f),
+          "halfway to the seam pans the map by a quarter edge");
     hud.set_player_location(0, exit.seam_center(), {&exit, 1});
     const auto midpoint = marker(hud);
-    check(midpoint.nearly_equals((start + right) * 0.5f), "source seam maps to the edge midpoint");
+    const auto seam_start = room_center(hud, 0);
+    check(midpoint.nearly_equals((seam_start + room_center(hud, 1)) * 0.5f),
+          "source seam centers the edge midpoint");
 
     const game::RoomCorridorLayout entry{RoomDirection::Left, {-90, -20, 200, 70}, {-90, -10, 200, 50}};
     hud.set_player_location(1, entry.seam_center(), {&entry, 1});
     check(marker(hud).nearly_equals(midpoint), "target's translated entrance continues at the same HUD midpoint");
+    check(room_center(hud, 0).nearly_equals(seam_start), "room and line positions stay continuous across the seam");
     hud.set_player_location(1, entry.seam_center() + Vector2{50, 0}, {&entry, 1});
-    check(marker(hud).nearly_equals(start + (right - start) * 0.75f), "incoming corridor advances toward the target room");
+    check(marker(hud).nearly_equals(room_center(hud, 0) + (right - start) * 0.75f),
+          "incoming corridor pans the map toward the target room");
     hud.set_player_location(0, {1000, 1000}, {&exit, 1});
     check(marker(hud).nearly_equals(start), "movement inside a room does not move its HUD dot");
 
@@ -86,11 +105,16 @@ void full_floor()
     hud.submit_ui_render_commands(commands);
     check(std::ranges::count(commands, UiRenderCommandType::DrawLine, &UiRenderCommand::type) == 60,
           "full 6x6 floor has 60 undirected connections");
-    for (const auto& command : commands)
+    bool has_offscreen_room = false;
+    for (std::size_t i = 1; i < commands.size(); ++i)
     {
+        const auto& command = commands[i];
+        check(command.use_clip_rect && hud.screen_rect().contains(command.clip_rect),
+              "map commands are clipped to the local HUD viewport");
         if (command.type == UiRenderCommandType::FillRoundedRect)
-            check(hud.screen_rect().contains(command.screen_rect), "all 36 blocks fit the HUD panel");
+            has_offscreen_room |= !hud.screen_rect().contains(command.screen_rect);
     }
+    check(has_offscreen_room, "a full floor is cropped rather than shrunk to fit the HUD");
 }
 }
 

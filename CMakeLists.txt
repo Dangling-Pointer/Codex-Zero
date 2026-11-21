@@ -64,7 +64,8 @@ target_link_libraries(CodexZero PRIVATE game_lib)
 elysia_copy_sdl_runtime(CodexZero)
 
 if(BUILD_TESTING)
-    add_executable(portal_tests tests/portal_tests.cpp tests/fixed_room_corridor_tests.cpp tests/floor_minimap_tests.cpp)
+    add_executable(portal_tests tests/portal_tests.cpp tests/fixed_room_corridor_tests.cpp
+        tests/floor_minimap_tests.cpp tests/gate_tests.cpp)
     target_link_libraries(portal_tests PRIVATE game_lib)
     elysia_copy_sdl_runtime(portal_tests)
     add_test(NAME portal_tests COMMAND portal_tests)
