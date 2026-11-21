@@ -10,6 +10,7 @@
 
 class PlayerCharacter;
 class Portal;
+class FloorMinimapHud;
 
 // Observers of scene-owned objects; ownership stays with Scene.
 struct RoomBuildResult
@@ -63,6 +64,7 @@ private:
     void clear_room() noexcept;
     void leave_through_portal();
     [[nodiscard]] bool try_leave_through_boundary();
+    void update_minimap();
 
     std::optional<RoomID> _room_id;
     std::optional<RoomID> _from_room;
@@ -71,6 +73,7 @@ private:
     PlayerCharacter* _player = nullptr;
 
     Portal* _portal = nullptr;
+    FloorMinimapHud* _minimap = nullptr;
 
     RoomBuildResult _room;
     RoomBuildConfig _config;

@@ -7,6 +7,7 @@
 #include "game/characters/character_manager.h"
 #include "game/characters/player_character.h"
 #include "game/objcets/portal.h"
+#include "game/ui/floor_minimap_hud.h"
 #include "engine/object_query/game_object_query_service.h"
 
 #include <cmath>
@@ -103,6 +104,8 @@ void geometry()
 struct BoundaryObservation
 {
     RoomScene* scene = nullptr;
+    FloorMinimapHud* hud = nullptr;
+    int active_huds = 0;
     int builds = 0;
     Vector2 center;
     PlayerMotionState motion;
@@ -130,6 +133,25 @@ public:
     }
 
 protected:
+    void on_scene_object_registered(elysia::core::SceneObject& object) override
+    {
+        RoomScene::on_scene_object_registered(object);
+        if (auto* hud = dynamic_cast<FloorMinimapHud*>(&object))
+        {
+            _observation.hud = hud;
+            ++_observation.active_huds;
+        }
+    }
+
+    void on_control_target_removing(elysia::core::SceneObject& object) override
+    {
+        if (dynamic_cast<FloorMinimapHud*>(&object))
+            --_observation.active_huds;
+        if (&object == _observation.hud)
+            _observation.hud = nullptr;
+        RoomScene::on_control_target_removing(object);
+    }
+
     RoomBuildResult build_room(const RoomBuildConfig& config) override
     {
         ++_observation.builds;
@@ -229,6 +251,12 @@ public:
         check(player().physics_world()->registered_object_count() == 1
             && ELYSIA_OBJECT_QUERY->find_objects<PlayerCharacter>().size() == 1,
               "same-key reuse has one live player and physics body");
+        check(observation.active_huds == 1 && observation.hud && !observation.hud->is_destroyed(),
+              "same-key room reuse keeps one live minimap");
+        std::vector<elysia::core::UiRenderCommand> hud_commands;
+        observation.hud->submit_ui_render_commands(hud_commands);
+        check(!hud_commands.empty() && hud_commands.back().type == elysia::core::UiRenderCommandType::FillCircle,
+              "destination minimap already shows its red marker before the first update");
 
         update(0);
         check(flow.get_current_room_id() == to && flow.find_room(to)->visited && flow.find_room(to)->discovered,

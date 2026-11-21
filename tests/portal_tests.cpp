@@ -24,6 +24,7 @@
 #include <stdexcept>
 
 void fixed_room_corridor_tests();
+void floor_minimap_tests();
 
 namespace
 {
@@ -1094,6 +1095,7 @@ int main()
         portal_trigger();
         placement();
         fixed_room_corridor_tests();
+        floor_minimap_tests();
         room_portal<CombatScene>(RoomScenePayload{
             *CharacterManager::instance()->create_context("default_player"), {}});
         generated_floor_tree();

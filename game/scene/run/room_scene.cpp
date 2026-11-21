@@ -11,6 +11,7 @@
 #include "game/objcets/portal.h"
 #include "game/scene/gameplay_setup.h"
 #include "game/scene/scene_keys.h"
+#include "game/ui/floor_minimap_hud.h"
 
 #include <cmath>
 #include <stdexcept>
@@ -74,6 +75,16 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
 
         game::initialize_room_camera(camera_runtime(), *_player, incoming->boundary_entry);
 
+        if (_room_id)
+        {
+            constexpr float size = 220, margin = 18;
+            const float right = static_cast<float>(runtime_context().logical_width()) - margin;
+            _minimap = create_and_add_object<FloorMinimapHud>(
+                elysia::core::Rect{right - size, margin, size, size},
+                GameFlowManager::instance()->current_floor());
+            update_minimap();
+        }
+
         _previous_player_center = _player->center();
         _active = true;
     }
@@ -133,6 +144,9 @@ void RoomScene::clear_room() noexcept
     _active = false;
     _transition_requested = false;
     _previous_player_center = {};
+    if (_minimap)
+        _minimap->destroy();
+    _minimap = nullptr;
     game::release_player(_player_controller);
     _combat.clear();
     _projectiles.unbind_scene();
@@ -169,6 +183,7 @@ void RoomScene::on_before_update(double delta)
 
 void RoomScene::on_after_update(double)
 {
+    update_minimap();
     if (!_active || is_paused() || !_room.map || _room.map->is_destroyed())
         return;
     if (_transition_requested || !_player || _player->is_destroyed() || !_player->is_active() || _player->is_dead())
@@ -181,6 +196,12 @@ void RoomScene::on_after_update(double)
 
     if (_portal && leaving_allowed)
         _portal->check_reached(_player->world_rect());
+}
+
+void RoomScene::update_minimap()
+{
+    if (_minimap && !_minimap->is_destroyed() && _room_id && _player && !_player->is_destroyed())
+        _minimap->set_player_location(*_room_id, _player->render_rect().center(), _room.corridors);
 }
 
 bool RoomScene::try_leave_through_boundary()
@@ -274,6 +295,8 @@ void RoomScene::on_control_target_removing(elysia::core::SceneObject& object)
         _player = nullptr;
     if (&object == _portal)
         _portal = nullptr;
+    if (&object == _minimap)
+        _minimap = nullptr;
     if (&object == _room.map)
     {
         if (_room.collision_world)
