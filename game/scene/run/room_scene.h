@@ -26,8 +26,8 @@ public:
     void on_enter(const elysia::scene::ScenePayload& payload) final;
     void on_exit() final;
     void on_reset() final;
-    void on_before_update(double delta) final;
-    void on_after_update(double delta) final;
+    void on_before_update(double delta) override;
+    void on_after_update(double delta)override;
     [[nodiscard]] std::optional<CharacterContext> capture_character_context() const;
 
 protected:
@@ -38,9 +38,12 @@ protected:
     virtual RoomBuildResult build_room(const RoomBuildConfig& config) = 0;
 
     virtual void create_room_content() {}
+    [[nodiscard]] virtual bool should_create_portal() const noexcept { return true; }
     [[nodiscard]] virtual bool can_leave_room() const { return true; }
 
     [[nodiscard]] const Room* run_room() const;
+
+    [[nodiscard]] const elysia::core::GameObject* room_map() const noexcept {return _room.map;}
 
     [[nodiscard]] PlayerCharacter* player() const noexcept { return _player; }
     [[nodiscard]] Portal* portal() const noexcept { return _portal; }
@@ -65,7 +68,6 @@ private:
     elysia::gameplay::ControllerHandle _player_controller;
     PlayerCharacter* _player = nullptr;
 
-    bool _active_portal = false;
     Portal* _portal = nullptr;
 
     RoomBuildResult _room;

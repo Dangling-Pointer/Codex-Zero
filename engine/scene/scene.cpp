@@ -133,7 +133,7 @@ void Scene::set_all_gameplay_input_blocked(bool blocked)
 
 void Scene::reset_input_routing()
 {
-    _input_router.reset();
+    _input_router.reset_for_scene_change();
 }
 
 void Scene::consume_input(const elysia::input::RawInputEvent& event)

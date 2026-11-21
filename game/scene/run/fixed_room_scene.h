@@ -2,7 +2,7 @@
 
 #include "room_scene.h"
 
-class FixedRoomScene final : public RoomScene
+class FixedRoomScene : public RoomScene
 {
 protected:
     RoomBuildResult build_room(const RoomBuildConfig& config) override;

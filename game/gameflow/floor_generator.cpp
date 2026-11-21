@@ -85,13 +85,15 @@ Floor FloorGenerator::generate(std::uint64_t seed, RoomID first_room_id,
                                const FloorGenerationConfig& config)
 {
     constexpr int capacity = Floor::width * Floor::height;
-    if (config.min_room_number < 6 || config.min_room_number > config.max_room_number
-        || config.max_room_number > capacity)
+
+    if (config.min_room_number < 6 || config.min_room_number > config.max_room_number|| config.max_room_number > capacity)
         throw std::invalid_argument("Floor room count must satisfy 6 <= minimum <= maximum <= capacity");
 
     _random.set_seed(seed);
+
     const int room_number = _random.int_inclusive(config.min_room_number, config.max_room_number);
     const auto last_room_id = static_cast<std::uint64_t>(first_room_id) + room_number - 1;
+
     if (last_room_id > std::numeric_limits<RoomID>::max())
         throw std::overflow_error("Not enough room IDs for the generated floor");
 
@@ -108,8 +110,10 @@ Floor FloorGenerator::generate(std::uint64_t seed, RoomID first_room_id,
 
     const FloorPosition end = get_end_pos(start, room_number);
     floor.rooms[end.y][end.x] = _room_factory.create_end(floor.end_room_id);
+
     fill_rooms(floor, room_number);
     generate_connections(floor, room_number);
+
     return floor;
 }
 
@@ -117,11 +121,13 @@ void FloorGenerator::fill_rooms(Floor& floor, int room_number)
 {
     const auto start = *floor.find_position(floor.start_room_id);
     const auto end = *floor.find_position(floor.end_room_id);
+
     std::uint64_t next_id = static_cast<std::uint64_t>(floor.start_room_id) + 2;
     int placed = 2;
     const auto place_combat_room = [&](FloorPosition position) {
         if (floor.room_at(position))
             throw std::logic_error("Generated room would overwrite an occupied position");
+
         floor.rooms[position.y][position.x] = _room_factory.create(
             static_cast<RoomID>(next_id++), RoomType::Combat, RoomDirection::None);
         ++placed;
@@ -135,6 +141,7 @@ void FloorGenerator::fill_rooms(Floor& floor, int room_number)
     {
         if (placed == room_number)
             throw std::logic_error("Generated floor has no space for the exit's connecting room");
+
         const std::array<FloorPosition, 2> corners{{{start.x, end.y}, {end.x, start.y}}};
         place_combat_room(_random.pick(corners));
     }

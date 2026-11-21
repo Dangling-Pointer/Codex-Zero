@@ -430,7 +430,7 @@ void ControllerManager::commit(const std::shared_ptr<Request> &r)
         scene.local_players().set_keyboard_requirement(local->player(), local->_map.keyboard_controls());
         local->_sources = scene.local_players().sources(local->player());
         local->_binding_version = scene.local_players().binding_version(local->player());
-        scene.input_router().suppress(local->player());
+        scene.input_router().suppress_on_bind(local->player());
     }
     release_reservation(*r);
     r->operation.finish();

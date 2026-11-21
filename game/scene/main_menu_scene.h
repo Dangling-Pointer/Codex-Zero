@@ -26,6 +26,7 @@ public:
 private:
     void build_menu_buttons();
     void start_run();
+    void start_corridor_test();
     void reset_exit_overlay();
     void restore_menu_state();
 

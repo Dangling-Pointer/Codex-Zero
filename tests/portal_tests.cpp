@@ -8,6 +8,7 @@
 #include "game/application/game_module.h"
 #include "game/gameflow/game_flow_manager.h"
 #include "game/scene/run/combat_scene.h"
+#include "game/scene/run/corridor_scene.h"
 #include "game/scene/scene_keys.h"
 #include "game/ui/floor_map_view.h"
 #include "engine/core/render/render_command.h"
@@ -903,6 +904,134 @@ template<class T> std::vector<T*> objects(elysia::scene::Scene& scene)
     return result;
 }
 
+void corridor_movement_and_lifecycle()
+{
+    const auto character = *CharacterManager::instance()->create_context("default_player");
+    const auto route = make_corridor_test_route(character);
+    const auto* payload = elysia::scene::try_scene_payload<RoomScenePayload>(route.payload);
+    check(route.target == Corridor && payload && !payload->room_id && !payload->from_room,
+          "corridor route is independent of dungeon room routing");
+    test::SceneHarness<CorridorScene> host(route.payload);
+    auto& scene = host.scene();
+    using Key = elysia::input::RawInputControl;
+
+    const auto drive = [&](Key key, int ticks) {
+        elysia::input::RawInputFrame frame;
+        frame.state.set_pressed(key, true);
+        host.input(frame, {});
+        for (int tick = 0; tick < ticks; ++tick)
+            host.update(1.0 / 60.0);
+    };
+
+    for (int visit = 0; visit < 3; ++visit)
+    {
+        if (visit)
+            host.enter(route.payload, visit == 1 ? elysia::scene::SceneReloadMode::Reuse
+                                                : elysia::scene::SceneReloadMode::Reset);
+        const auto maps = objects<DungeonRoom>(scene);
+        const auto players = objects<PlayerCharacter>(scene);
+        check(maps.size() == 1 && players.size() == 1 && objects<Portal>(scene).empty()
+            && objects<Enemy>(scene).empty(), "corridor has one map and player, with no portal or enemies");
+        auto* map = maps.front();
+        auto* player = players.front();
+        check(player->physics_world() != nullptr, "corridor player is bound to physics");
+        auto& world = *player->physics_world();
+        check(map->columns() == 48 && map->rows() == 7, "corridor uses the fixed 48 by 7 layout");
+        check(game::walkable_bounds(*map, player->world_rect()), "corridor player spawns on floor");
+        check(std::abs(player->center().y - map->center().y) < 0.01f
+            && player->position().x < map->position().x + map->tile_size().x * 3,
+            "corridor spawn is centered vertically near the left end");
+        check(scene.camera().zoom() == 2.0f, "corridor keeps the room camera zoom");
+        check(world.registered_object_count() == 1,
+              "corridor reentry has no leftover physics objects");
+
+        const auto spawn = player->position();
+        const auto camera_start = scene.camera().center();
+        drive(Key::KeyD, 20);
+        check(player->position().x > spawn.x + 40 && player->velocity().x > 0,
+              "corridor player responds to its bound movement controller");
+        check(scene.camera().center().x > camera_start.x, "corridor camera follows movement");
+
+        const auto tile = map->tile_size();
+        const Rect interior{map->position() + tile, map->size() - tile * 2};
+        const auto local_body = std::get<elysia::physics::BoxShape>(
+            player->collider_definitions().front().shape).local_bounds();
+        for (const auto key : {Key::KeyA, Key::KeyD, Key::KeyW, Key::KeyS})
+        {
+            auto test_spawn = spawn;
+            if (key == Key::KeyD)
+                test_spawn.x = interior.right() - player->size().x - 8;
+            check(world.teleport_object(player->physics_handle(), test_spawn,
+                    elysia::physics::TeleportVelocityMode::Clear), "corridor collision test teleports player");
+            drive(key, 90);
+            const Rect body{player->position() + local_body.position(), local_body.size()};
+            constexpr float tolerance = 1.0f;
+            check(body.left() >= interior.left() - tolerance && body.right() <= interior.right() + tolerance
+                && body.top() >= interior.top() - tolerance && body.bottom() <= interior.bottom() + tolerance,
+                "corridor walls contain the player's collision body");
+            float gap = 0;
+            switch (key)
+            {
+            case Key::KeyA: gap = body.left() - interior.left(); break;
+            case Key::KeyD: gap = interior.right() - body.right(); break;
+            case Key::KeyW: gap = body.top() - interior.top(); break;
+            case Key::KeyS: gap = interior.bottom() - body.bottom(); break;
+            default: throw std::runtime_error("Unexpected corridor wall test direction");
+            }
+            check(std::abs(gap) < tolerance, "each corridor wall stops an actual movement attempt");
+        }
+        host.leave();
+        check(objects<PlayerCharacter>(scene).empty() && objects<DungeonRoom>(scene).empty()
+            && world.registered_object_count() == 0,
+            "leaving corridor releases objects and physics registrations");
+    }
+}
+
+void corridor_menu_entry()
+{
+    auto& flow = *GameFlowManager::instance();
+    const Floor original = flow.current_floor();
+    elysia::io::ContentRegistry content;
+    elysia::scene::SceneRuntimeContext context{nullptr, content, 1280, 720};
+    elysia::scene::SceneManager manager;
+    manager.initialize(context);
+    GameModule{}.register_scenes(manager);
+    manager.start({.target = MainMenu});
+
+    for (int visit = 0; visit < 2; ++visit)
+    {
+        click(manager, 125, 38); // Existing top-left character selection button.
+        manager.on_update(0);
+        check(manager.current_scene_key() == Corridor, "character selection button opens corridor test");
+        const auto* query = ELYSIA_OBJECT_QUERY;
+        const auto maps = query->find_objects<DungeonRoom>();
+        check(maps.size() == 1 && maps.front()->columns() == 48 && maps.front()->rows() == 7,
+              "menu corridor entry uses its configured fixed layout");
+        check(query->find_objects<PlayerCharacter>().size() == 1
+            && query->find_objects<Portal>().empty() && query->find_objects<Enemy>().empty(),
+            "repeated menu entry creates only the standalone corridor content");
+        press_escape(manager);
+        manager.on_update(0);
+        check(manager.current_scene_key() == MainMenu, "corridor Escape returns to the main menu");
+    }
+
+    const auto& after = flow.current_floor();
+    check_same_layout(original, after);
+    for (int y = 0; y < Floor::height; ++y)
+    {
+        for (int x = 0; x < Floor::width; ++x)
+        {
+            const auto* before = original.room_at({x, y});
+            if (!before)
+                continue;
+            const auto* room = after.room_at({x, y});
+            check(room->discovered == before->discovered && room->visited == before->visited
+                && room->cleared == before->cleared && room->event_triggered == before->event_triggered,
+                "corridor test leaves dungeon exploration and completion unchanged");
+        }
+    }
+}
+
 template<class T> void room_portal(const elysia::scene::ScenePayload& payload = {})
 {
     test::SceneHarness<T> host(payload);
@@ -986,6 +1115,8 @@ int main()
         floor_map_directions();
         sparse_floor_connections();
         single_floor_run();
+        corridor_movement_and_lifecycle();
+        corridor_menu_entry();
         std::cout << "Portal tests passed\n";
         return 0;
     }

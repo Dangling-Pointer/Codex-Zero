@@ -3,9 +3,11 @@
 #include "../../input/input_suppression.h"
 #include <functional>
 #include <map>
+#include <set>
 namespace elysia::scene
 {
 class Scene;
+class SceneManager;
 }
 namespace elysia::gameplay
 {
@@ -58,8 +60,27 @@ class SceneInputRouter
     }
   private:
     friend class elysia::scene::Scene;
+    friend class elysia::scene::SceneManager;
     friend class elysia::gameplay::GameplayScene;
     friend class elysia::gameplay::ControllerManager;
+    using SourceStates = std::map<elysia::input::InputSourceId, elysia::input::RawInputState>;
+    using SourceSuppression = std::map<elysia::input::InputSourceId, elysia::input::InputSuppression>;
+    struct PlayerHeldInput
+    {
+        std::uint64_t binding_version;
+        SourceStates sources;
+    };
+    using HeldInput = std::map<elysia::input::LocalPlayerId, PlayerHeldInput>;
+    [[nodiscard]] HeldInput capture_held_input() const;
+    [[nodiscard]] SourceStates eligible_held_input(const elysia::input::InputSnapshot &) const;
+    void reset_for_scene_change();
+    void reset(SourceSuppression &);
+    void suppress(elysia::input::LocalPlayerId, SourceSuppression &);
+    void suppress_on_bind(elysia::input::LocalPlayerId);
+    void observe_gameplay(elysia::input::InputSourceId, const elysia::input::RawInputState &,
+                          elysia::input::InputCapture);
+    [[nodiscard]] elysia::input::RawInputState filter_gameplay(
+        elysia::input::InputSourceId, const elysia::input::RawInputState &, elysia::input::InputCapture) const;
     void set_ui_access(UiDeviceAccess &access) noexcept
     {
         _ui_access = &access;
@@ -93,10 +114,14 @@ class SceneInputRouter
     elysia::input::InputDevice _ui_active_device = elysia::input::InputDevice::Keyboard;
     elysia::ui::UiInputState _last_ui_state;
     bool _await_initial_input = true;
+    bool _await_scene_input = true;
     std::vector<elysia::input::InputSourceId> _previous_ui_sources;
     std::map<elysia::input::InputSourceId, elysia::input::InputCapture> _previous_capture;
-    std::map<elysia::input::InputSourceId, elysia::input::InputSuppression> _suppression, _ui_suppression;
+    SourceSuppression _suppression, _entry_suppression, _ui_suppression, _shortcut_entry_suppression;
     elysia::input::InputSnapshot _last_input;
+    HeldInput _last_gameplay_input;
+    HeldInput _pending_held_input;
+    std::set<elysia::input::LocalPlayerId> _initial_bindings, _entry_excluded_players;
     std::vector<elysia::input::RawInputEvent> _consumed;
     bool _block_gameplay = false;
     bool _routing = false;

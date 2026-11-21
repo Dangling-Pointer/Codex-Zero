@@ -262,6 +262,9 @@ std::expected<void, SceneBoundaryFailure> SceneManager::switch_to_scene(
 
     Scene* old_scene = _current_scene;
     const SceneKey old_key = _current_scene_key;
+    auto held_input = old_scene && route.held_input_on_enter == HeldInputOnEnter::Preserve
+        ? old_scene->_input_router.capture_held_input()
+        : SceneInputRouter::HeldInput{};
     detail::SceneFailureCollector leave_failures;
     leave_current_scene(leave_failures);
     if (!leave_failures.empty())
@@ -357,6 +360,7 @@ std::expected<void, SceneBoundaryFailure> SceneManager::switch_to_scene(
     }
     _current_scene = next_scene;
     _current_scene_key = route.target;
+    next_scene->_input_router._pending_held_input = std::move(held_input);
     return {};
 }
 

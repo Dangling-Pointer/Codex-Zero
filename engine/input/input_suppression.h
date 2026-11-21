@@ -35,7 +35,7 @@ class InputSuppression
             for (int i = 1; i < int(RawInputAxis::Count); ++i)
             {
                 auto a = static_cast<RawInputAxis>(i);
-                if (std::abs(state.axis_value(a)) > 0.2f)
+                if (std::abs(state.axis_value(a)) > AxisNeutralThreshold)
                     _blocked.set_axis(a, 1.f);
             }
     }
@@ -43,8 +43,23 @@ class InputSuppression
     {
         if (event.type == RawInputEventType::ControlPressed)
             _blocked.set_pressed(event.control, true);
-        if (event.type == RawInputEventType::AxisChanged && std::abs(event.axis_value) > 0.2f)
+        if (event.type == RawInputEventType::AxisChanged && std::abs(event.axis_value) > AxisNeutralThreshold)
             _blocked.set_axis(event.axis, 1.f);
+    }
+    void unblock(const RawInputState &held)
+    {
+        for (int i = 1; i < int(RawInputControl::Count); ++i)
+        {
+            auto control = static_cast<RawInputControl>(i);
+            if (held.is_pressed(control))
+                _blocked.set_pressed(control, false);
+        }
+        for (int i = 1; i < int(RawInputAxis::Count); ++i)
+        {
+            auto axis = static_cast<RawInputAxis>(i);
+            if (std::abs(held.axis_value(axis)) > AxisNeutralThreshold)
+                _blocked.set_axis(axis, 0.f);
+        }
     }
     // Advance only from physical state, in event order. Filtering is a pure query.
     void observe(const RawInputState &physical, InputCapture mask = InputCapture::None)
@@ -58,7 +73,7 @@ class InputSuppression
         for (int i = 1; i < int(RawInputAxis::Count); ++i)
         {
             auto a = static_cast<RawInputAxis>(i);
-            if (std::abs(physical.axis_value(a)) <= 0.2f)
+            if (std::abs(physical.axis_value(a)) <= AxisNeutralThreshold)
                 _blocked.set_axis(a, 0.f);
         }
         block(physical, mask);
@@ -86,6 +101,7 @@ class InputSuppression
     }
 
   private:
+    static constexpr float AxisNeutralThreshold = 0.2f;
     RawInputState _blocked;
 };
 inline constexpr InputCapture AllInputCapture =

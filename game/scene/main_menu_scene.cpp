@@ -1,5 +1,6 @@
 #include "main_menu_scene.h"
 
+#include "run/corridor_scene.h"
 #include "run/room_scene_payload.h"
 #include "scene_keys.h"
 #include "game/characters/character_manager.h"
@@ -123,8 +124,8 @@ void MainMenuScene::build_menu_buttons()
     auto test_button = make_menu_button(ui_text_key("menu_scene.test"), [this] { request_scene_switch(Game); });
     window.add_child(std::move(test_button), {._anchor = UiLayoutAnchor::TopRight});
 
-    auto character_button = make_menu_button(ui_raw_text("character selection"), [] {
-        ELYSIA_LOG_DEBUG("MainMenuScene", "Character Selection test button");
+    auto character_button = make_menu_button(ui_raw_text("character selection"), [this] {
+        start_corridor_test();
     });
     window.add_child(std::move(character_button), {._anchor = UiLayoutAnchor::TopLeft});
 
@@ -158,6 +159,17 @@ void MainMenuScene::start_run()
     auto& flow = *GameFlowManager::instance();
     flow.restart(seed);
     request_scene_switch(make_run_room_route(flow.get_current_room_id(), *character));
+}
+
+void MainMenuScene::start_corridor_test()
+{
+    const auto character = CharacterManager::instance()->create_context("default_player");
+    if (!character)
+    {
+        ELYSIA_LOG_ERROR("MainMenuScene", "Cannot create default player context for corridor test");
+        return;
+    }
+    request_scene_switch(make_corridor_test_route(*character));
 }
 
 void MainMenuScene::reset_exit_overlay()

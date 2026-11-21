@@ -110,8 +110,10 @@ void RoomScene::on_reset() { clear_room(); }
 void RoomScene::build_room_objects(const CharacterContext& character)
 {
     _room = build_room(_config);
+
     if (!_room.map || _room.map->is_destroyed())
         throw std::runtime_error("Room build did not provide a valid map");
+
     if (!_room.collision_world)
         throw std::runtime_error("Room build did not provide a tile collision world");
 
@@ -123,17 +125,21 @@ void RoomScene::build_room_objects(const CharacterContext& character)
     if (!physics_world().set_tile_world(collision_world))
         throw std::runtime_error("Cannot bind room tile collision world");
 
-    const auto portal_bounds = game::central_portal_bounds(*_room.map);
     const elysia::core::Rect player_bounds{spawn, game::kPlayerSpawnSize};
-    if (!game::walkable_bounds(collision_world, portal_bounds))
-        throw std::runtime_error("Room portal must be on walkable ground");
     if (!game::walkable_bounds(collision_world, player_bounds))
         throw std::runtime_error("Room player spawn must be on walkable ground");
-    if (portal_bounds.intersects(player_bounds))
-        throw std::runtime_error("Room player spawn overlaps the portal");
 
-    _portal = create_and_add_object<Portal>(portal_bounds);
-    _portal->set_on_reached([this] { leave_through_portal(); });
+    if (should_create_portal())
+    {
+        const auto portal_bounds = game::central_portal_bounds(*_room.map);
+        if (!game::walkable_bounds(collision_world, portal_bounds))
+            throw std::runtime_error("Room portal must be on walkable ground");
+        if (portal_bounds.intersects(player_bounds))
+            throw std::runtime_error("Room player spawn overlaps the portal");
+
+        _portal = create_and_add_object<Portal>(portal_bounds);
+        _portal->set_on_reached([this] { leave_through_portal(); });
+    }
 
     _player = create_and_add_object<PlayerCharacter>(spawn, character);
     if (!_player || _player->is_destroyed())
