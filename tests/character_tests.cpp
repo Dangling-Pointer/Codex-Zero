@@ -7,6 +7,7 @@
 #include "game/scene/gameplay_setup.h"
 #include "game/enemy_generation/enemy_generator.h"
 #include "game/characters/player_character.h"
+#include "game/Controller/player_controller.h"
 #include "game/characters/enemy.h"
 #include "game/combat/collision/combat_collision_categories.h"
 #include "game/scene/game_scene.h"
@@ -104,7 +105,11 @@ void movement()
     test::SceneHarness<TestScene> host;
     TestScene& scene = host.scene();
     auto* player = scene.create_and_add_object<PlayerCharacter>(elysia::core::Vector2{100, 100});
-    (void)game::bind_player(scene.control_context(), *player);
+    const auto controller_handle = game::bind_player(scene.control_context(), *player);
+    const auto* controller = elysia::gameplay::ControllerService::instance()
+        ->get<game::PlayerController>(controller_handle);
+    check(controller && controller->player() == elysia::input::PrimaryLocalPlayer,
+          "game player controller bound to primary local player");
     auto* enemy = scene.create_and_add_object<Enemy>(elysia::core::Vector2{1000, 1000});
     check(scene.physics_world().registered_object_count() == 2
         && scene.physics_world().registered_collider_count() == 4, "one registration per character");

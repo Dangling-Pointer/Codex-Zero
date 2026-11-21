@@ -14,7 +14,8 @@ GameFlowManager::GameFlowManager()
 void GameFlowManager::restart(std::uint64_t run_seed)
 {
     RoomID next_room_id = 0;
-    auto floor = _generator.generate(run_seed, next_room_id, {13,15});
+    const FloorGenerationConfig config{.min_room_number = 13, .max_room_number = 15};
+    auto floor = _generator.generate(run_seed, next_room_id, config);
     const auto start_position = floor.find_position(floor.start_room_id);
     const auto end_position = floor.find_position(floor.end_room_id);
 
@@ -23,7 +24,7 @@ void GameFlowManager::restart(std::uint64_t run_seed)
 
     auto& start = *floor.room_at(*start_position);
     auto& end = *floor.room_at(*end_position);
-        
+
     if (start.type != RoomType::Start || end.type != RoomType::End)
         throw std::logic_error("Generated floor has an invalid start or exit");
 
@@ -37,7 +38,12 @@ void GameFlowManager::restart(std::uint64_t run_seed)
             floor.room_at(*neighbor)->discovered = true;
     }
 
-    next_room_id = floor.end_room_id + 1;
+    for (const auto& row : floor.rooms)
+    {
+        next_room_id += static_cast<RoomID>(std::ranges::count_if(row, [](const auto& room) {
+            return room.has_value();
+        }));
+    }
     _floor = std::move(floor);
     _next_room_id = next_room_id;
     ELYSIA_LOG_DEBUG("GameFlowManager", "start with seed: " << run_seed);

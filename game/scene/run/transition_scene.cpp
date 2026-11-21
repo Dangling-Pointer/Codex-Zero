@@ -21,7 +21,8 @@ void TransitionScene::on_enter(const elysia::scene::ScenePayload& payload)
         elysia::core::Rect{0, 0, width, height},
         flow.current_floor(),
         [&flow](RoomID id) { return flow.can_enter_room(id); },
-        [this](RoomID id) { choose_room(id); });
+        [this](RoomID id) { choose_room(id); },
+        FloorMapView::Visibility::ShowAll);
     if (!_map_view)
         throw std::runtime_error("Cannot create floor map view");
 

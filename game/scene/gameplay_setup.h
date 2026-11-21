@@ -2,7 +2,7 @@
 
 #include "engine/gameplay/scene/gameplay_scene.h"
 #include "engine/tools/logger.h"
-#include "game/input/game_input_map.h"
+#include "game/Controller/player_controller.h"
 
 #include <stdexcept>
 
@@ -24,10 +24,8 @@ inline elysia::gameplay::ControllerHandle bind_player(
 {
     using namespace elysia::gameplay;
     auto* service = ControllerService::instance();
-    const auto handle = service->create<LocalPlayerController>(
-        {ControllerScope::Scene, context.token()},
-        elysia::input::PrimaryLocalPlayer,
-        game::input::make_player_input_map());
+    const auto handle = service->create<game::PlayerController>(
+        {ControllerScope::Scene, context.token()});
 
     if (!handle)
         throw std::runtime_error("Cannot create player controller");

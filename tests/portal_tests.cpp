@@ -32,11 +32,11 @@ void check(bool condition, const char* message)
     if (!condition) throw std::runtime_error(message);
 }
 
-template<class Function> void rejects(Function&& function, const char* message)
+template<class Exception = std::runtime_error, class Function> void rejects(Function&& function, const char* message)
 {
     bool rejected = false;
     try { function(); }
-    catch (const std::runtime_error&) { rejected = true; }
+    catch (const Exception&) { rejected = true; }
     check(rejected, message);
 }
 
@@ -416,12 +416,19 @@ void sparse_floor_connections()
           "long connections respect the hidden destination");
 }
 
-void check_skeleton(const Floor& floor, std::uint64_t seed, RoomID first_id)
+struct GeneratedFloorStats
+{
+    int room_count = 0;
+    int directed_edges = 0;
+    bool has_long_connection = false;
+};
+
+GeneratedFloorStats check_generated_floor(const Floor& floor, std::uint64_t seed,
+                                         RoomID first_id, const FloorGenerationConfig& config)
 {
     check(floor.seed == seed && floor.start_room_id == first_id
         && floor.end_room_id == first_id + 1 && floor.current_room_id == first_id,
         "generated floor metadata agrees with its seed and room IDs");
-
     const auto start = floor.find_position(first_id);
     const auto end = floor.find_position(first_id + 1);
     check(start && end, "both generated room IDs resolve to occupied cells");
@@ -432,27 +439,117 @@ void check_skeleton(const Floor& floor, std::uint64_t seed, RoomID first_id)
     check(floor.room_at(*start)->type == RoomType::Start
         && floor.room_at(*end)->type == RoomType::End, "generated endpoints have the right types");
 
-    int room_count = 0;
+    constexpr std::array<FloorPosition, 4> start_offsets{{{0, -1}, {1, 0}, {0, 1}, {-1, 0}}};
+    const auto start_neighbors = floor.neighbors(*start);
+    check(floor.room_at(*start)->accessible_directions == RoomDirection::All,
+          "generated start has all four exits");
+    for (std::size_t i = 0; i < start_offsets.size(); ++i)
+    {
+        const FloorPosition expected{start->x + start_offsets[i].x, start->y + start_offsets[i].y};
+        check(start_neighbors[i] == expected, "start connects to its four immediately adjacent cells");
+        const auto* neighbor = floor.room_at(expected);
+        check(neighbor && neighbor->type == RoomType::Combat
+            && neighbor->id == static_cast<std::uint64_t>(first_id) + 2 + i,
+            "starting combat IDs follow up, right, down and left without being overwritten");
+    }
+    check(std::ranges::find(start_neighbors, end) == start_neighbors.end(),
+          "exit never connects directly to the start");
+
+    GeneratedFloorStats stats;
+    std::vector<RoomID> ids;
     for (int y = 0; y < Floor::height; ++y)
     {
         for (int x = 0; x < Floor::width; ++x)
         {
-            const auto* room = floor.room_at({x, y});
+            const FloorPosition position{x, y};
+            const auto* room = floor.room_at(position);
             if (!room)
                 continue;
 
-            ++room_count;
-            check(!room->discovered && !room->visited && !room->cleared && !room->event_triggered,
-                  "generation initializes every room state");
-            const auto neighbors = floor.neighbors({x, y});
-            check(std::ranges::none_of(neighbors, [](const auto& neighbor) { return neighbor.has_value(); }),
-                  "the skeleton contains no traversable connections");
+            ++stats.room_count;
+            ids.push_back(room->id);
+            if (room->id != first_id && room->id != first_id + 1)
+                check(room->type == RoomType::Combat, "all additional rooms are ordinary combat rooms");
+            check(!room->discovered && !room->visited && !room->cleared
+                && !room->event_triggered && !room->content_id, "generation initializes every room state");
+
+            for (const auto& neighbor : floor.neighbors(position))
+            {
+                if (!neighbor)
+                    continue;
+
+                ++stats.directed_edges;
+                const auto reverse = floor.neighbors(*neighbor);
+                check(std::ranges::find(reverse, std::optional{position}) != reverse.end(),
+                      "generated connections are bidirectional");
+                check(x == neighbor->x || y == neighbor->y, "connections stay on one row or column");
+                const int dx = (neighbor->x > x) - (neighbor->x < x);
+                const int dy = (neighbor->y > y) - (neighbor->y < y);
+                FloorPosition between{x + dx, y + dy};
+                while (between != *neighbor)
+                {
+                    stats.has_long_connection = true;
+                    check(!floor.room_at(between), "long connections never skip an intervening room");
+                    between.x += dx;
+                    between.y += dy;
+                }
+            }
         }
     }
-    check(room_count == 2, "generation creates exactly two rooms");
+    check(stats.room_count >= config.min_room_number && stats.room_count <= config.max_room_number,
+          "room count respects the configuration, including start and exit");
+    check(stats.directed_edges == 2 * (stats.room_count - 1), "generated floor has exactly N minus one edges");
+    std::ranges::sort(ids);
+    for (std::size_t i = 0; i < ids.size(); ++i)
+        check(ids[i] == static_cast<std::uint64_t>(first_id) + i, "room IDs are unique and contiguous");
+
+    std::array<std::array<bool, Floor::width>, Floor::height> reached{};
+    reached[start->y][start->x] = true;
+    std::queue<FloorPosition> pending;
+    pending.push(*start);
+    int reachable = 0;
+    while (!pending.empty())
+    {
+        const auto position = pending.front();
+        pending.pop();
+        ++reachable;
+        for (const auto& neighbor : floor.neighbors(position))
+        {
+            if (neighbor && !reached[neighbor->y][neighbor->x])
+            {
+                reached[neighbor->y][neighbor->x] = true;
+                pending.push(*neighbor);
+            }
+        }
+    }
+    check(reachable == stats.room_count, "every generated room is reachable from the start");
+    const auto exit_neighbors = floor.neighbors(*end);
+    check(std::ranges::count_if(exit_neighbors, [](const auto& neighbor) { return neighbor.has_value(); }) == 1,
+          "exit has exactly one entrance");
+    return stats;
 }
 
-void generated_floor_skeleton()
+void check_same_layout(const Floor& first, const Floor& second, RoomID id_offset = 0)
+{
+    check(first.seed == second.seed && second.start_room_id == first.start_room_id + id_offset
+        && second.end_room_id == first.end_room_id + id_offset
+        && second.current_room_id == first.current_room_id + id_offset, "seeded floor metadata repeats");
+    for (int y = 0; y < Floor::height; ++y)
+    {
+        for (int x = 0; x < Floor::width; ++x)
+        {
+            const auto* original = first.room_at({x, y});
+            const auto* replay = second.room_at({x, y});
+            check(bool(original) == bool(replay), "seeded room positions repeat");
+            if (original)
+                check(replay->id == original->id + id_offset && replay->type == original->type
+                    && replay->accessible_directions == original->accessible_directions
+                    && replay->content_id == original->content_id, "seeded room data and connections repeat");
+        }
+    }
+}
+
+void generated_floor_tree()
 {
     const RoomFactory factory;
     const auto event = factory.create(17, RoomType::Event, RoomDirection::Left, "sealed_chest");
@@ -464,65 +561,121 @@ void generated_floor_skeleton()
         && factory.create_test_room(102).id == 102, "factory helpers use explicit IDs");
 
     FloorGenerator generator;
-    const auto first = generator.generate(42, 0);
-    const auto offset = generator.generate(42, 100);
-    (void)generator.generate(43, 500);
-    const auto repeated = generator.generate(42, 0);
-    check_skeleton(first, 42, 0);
-    check_skeleton(offset, 42, 100);
-    check_skeleton(repeated, 42, 0);
-    for (int y = 0; y < Floor::height; ++y)
-    {
-        for (int x = 0; x < Floor::width; ++x)
-        {
-            const auto* original = first.room_at({x, y});
-            const auto* shifted = offset.room_at({x, y});
-            const auto* replay = repeated.room_at({x, y});
-            check(bool(original) == bool(shifted) && bool(original) == bool(replay),
-                  "room ID offsets and generator reuse preserve seeded positions");
-            if (!original)
-                continue;
+    const FloorGenerationConfig config;
+    const auto first = generator.generate(42, 0, config);
+    const auto offset = generator.generate(42, 100, config);
+    (void)generator.generate(43, 500, config);
+    const auto repeated = generator.generate(42, 0, config);
+    check_generated_floor(first, 42, 0, config);
+    check_generated_floor(offset, 42, 100, config);
+    check_generated_floor(repeated, 42, 0, config);
+    check_same_layout(first, repeated);
+    check_same_layout(first, offset, 100);
 
-            check(original->id == replay->id && shifted->id == original->id + 100
-                && original->type == replay->type && original->type == shifted->type
-                && original->accessible_directions == replay->accessible_directions
-                && original->accessible_directions == shifted->accessible_directions,
-                "repeated generation preserves room contents while IDs shift explicitly");
+    bool found_long_connection = false;
+    bool found_exit_bend = false;
+    std::array<bool, 4> observed_counts{};
+    for (std::uint64_t seed = 0; seed < 64; ++seed)
+    {
+        const auto floor = generator.generate(seed, 0, config);
+        const auto stats = check_generated_floor(floor, seed, 0, config);
+        found_long_connection |= stats.has_long_connection;
+        observed_counts[stats.room_count - config.min_room_number] = true;
+        for (int count : {6, 7, 12, 15, 36})
+        {
+            const FloorGenerationConfig fixed{count, count};
+            const auto fixed_floor = generator.generate(seed, 100, fixed);
+            const auto fixed_stats = check_generated_floor(fixed_floor, seed, 100, fixed);
+            if (count == 36)
+                check(!fixed_stats.has_long_connection, "full grid connections only join adjacent rooms");
+            if (count == 6 || count == 7)
+            {
+                const auto start = *fixed_floor.find_position(100);
+                const auto end = *fixed_floor.find_position(101);
+                const bool shares_column = end.x >= start.x - 1 && end.x <= start.x + 1;
+                const bool shares_row = end.y >= start.y - 1 && end.y <= start.y + 1;
+                if (count == 6)
+                    check(shares_column || shares_row, "six-room exit can attach without an extra room");
+                else if (!shares_column && !shares_row)
+                {
+                    found_exit_bend = true;
+                    const auto corner = *fixed_floor.find_position(106);
+                    check(corner == FloorPosition{start.x, end.y} || corner == FloorPosition{end.x, start.y},
+                          "seventh room provides a bend when the exit cannot see the cross");
+                }
+            }
         }
     }
-    for (std::uint64_t seed = 0; seed < 64; ++seed)
-        check_skeleton(generator.generate(seed, 0), seed, 0);
+    check(found_long_connection, "seeded generation produces connections across empty cells");
+    check(found_exit_bend, "seven-room floors still support perimeter exits that require a bend");
+    check(std::ranges::all_of(observed_counts, [](bool observed) { return observed; }),
+          "fixed seed sample exercises all configured room counts");
+
+    for (const FloorGenerationConfig invalid : {FloorGenerationConfig{-1, 15}, {3, 15}, {5, 15}, {15, 12}, {12, 37}})
+        rejects<std::invalid_argument>([&] { (void)generator.generate(42, 0, invalid); },
+                                       "invalid room count configuration is rejected");
 
     const auto max_id = std::numeric_limits<RoomID>::max();
-    rejects([&] { (void)generator.generate(42, max_id); }, "room ID increment overflow is rejected");
-    check_skeleton(generator.generate(42, max_id - 1), 42, max_id - 1);
-    check_skeleton(generator.generate(42, 0), 42, 0);
+    for (int count : {6, 7, 12, 15, 36})
+    {
+        const FloorGenerationConfig fixed{count, count};
+        const RoomID first_id = max_id - count + 1;
+        check_generated_floor(generator.generate(42, first_id, fixed), 42, first_id, fixed);
+        rejects([&] { (void)generator.generate(42, first_id + 1, fixed); },
+                "overflow anywhere in the full ID range is rejected");
+    }
+    check_same_layout(first, generator.generate(42, 0, config));
+}
 
+void generated_run_state()
+{
     GameFlowManager flow;
+    FloorGenerator generator;
+    const FloorGenerationConfig config{13, 15};
     check(flow.get_current_room_id() == 0 && flow.get_current_room_type() == RoomType::Start,
           "constructor creates a valid starting room");
     for (const std::uint64_t seed : {42, 43, 42})
     {
-        flow.mark_current_room_cleared();
         flow.restart(seed);
         const auto& floor = flow.current_floor();
-        const auto* start = flow.find_room(0);
-        const auto* end = flow.find_room(1);
-        check(start && end && floor.start_room_id == 0 && floor.end_room_id == 1
-            && floor.current_room_id == 0 && floor.seed == seed,
-            "every restart resets room numbering and floor metadata");
-        check(start->type == RoomType::Start && start->discovered && start->visited
-            && !start->cleared && !start->event_triggered, "restart resets and visits the start");
-        check(end->type == RoomType::End && end->discovered && !end->visited
-            && !end->cleared && !end->event_triggered, "restart reveals the unvisited exit");
-        check(flow.get_current_depth() == 0 && flow.room_seed(1) == seed + 1,
+        check_same_layout(generator.generate(seed, 0, config), floor);
+        const auto start = *floor.find_position(floor.start_room_id);
+        const auto neighbors = floor.neighbors(start);
+        std::optional<RoomID> combat_neighbor;
+        int selectable_rooms = 0;
+        for (int y = 0; y < Floor::height; ++y)
+        {
+            for (int x = 0; x < Floor::width; ++x)
+            {
+                const auto* room = floor.room_at({x, y});
+                if (!room)
+                    continue;
+
+                const bool adjacent = std::ranges::find(neighbors, std::optional{FloorPosition{x, y}}) != neighbors.end();
+                const bool is_start = room->id == floor.start_room_id;
+                const bool is_end = room->id == floor.end_room_id;
+                check(room->discovered == (is_start || is_end || adjacent) && room->visited == is_start,
+                      "restart reveals the start, connected neighbors and exit");
+                check(!room->cleared && !room->event_triggered, "restart resets combat and event state");
+                check(flow.can_enter_room(room->id) == (adjacent && !is_start),
+                      "only connected neighbors are initially selectable");
+                if (flow.can_enter_room(room->id))
+                    ++selectable_rooms;
+                if (adjacent && room->type == RoomType::Combat)
+                    combat_neighbor = room->id;
+            }
+        }
+        check(selectable_rooms == 4 && !flow.can_enter_room(floor.end_room_id),
+              "new run offers four starting choices and no direct exit");
+        check(flow.get_current_depth() == 0 && flow.room_seed(2) == seed + 2,
               "single-floor depth and room terrain seeds remain consistent");
-        check(!flow.find_room(2) && !flow.can_enter_room(0) && !flow.can_enter_room(1)
-            && !flow.can_enter_room(max_id) && !flow.try_enter_room(1),
-            "unconnected exit and invalid IDs cannot be selected");
+        check(!flow.can_enter_room(std::numeric_limits<RoomID>::max()), "invalid IDs cannot be selected");
+        check(combat_neighbor && flow.try_enter_room(*combat_neighbor), "generated combat neighbor is reachable");
+        flow.mark_current_room_cleared();
+        check(flow.try_enter_room(0) && flow.find_room(*combat_neighbor)->cleared,
+              "visited room travel preserves combat clear state until restart");
     }
 }
-
 void press_escape(elysia::scene::SceneManager& manager)
 {
     using namespace elysia::input;
@@ -544,6 +697,78 @@ void press_escape(elysia::scene::SceneManager& manager)
     }
 }
 
+void choose_map_room(elysia::scene::SceneManager& manager, RoomID id, bool enabled = true)
+{
+    auto& flow = *GameFlowManager::instance();
+    check(manager.current_scene_key() == FloorMap, "room selection starts on the map");
+    FloorMapView preview(Rect{0, 0, 1280, 720}, flow.current_floor(),
+                         [&flow](RoomID room_id) { return flow.can_enter_room(room_id); }, [](RoomID) {},
+                         FloorMapView::Visibility::ShowAll);
+    std::vector<elysia::core::UiRenderCommand> commands;
+    preview.submit_ui_render_commands(commands);
+    for (std::size_t i = 0; i < preview.child_count(); ++i)
+    {
+        const auto* button = dynamic_cast<const elysia::ui::UiButton*>(preview.child_at(i));
+        if (!button || std::stoul(button->text_content().value) != id)
+            continue;
+
+        check(button->is_enabled() == enabled, "map button availability matches the generated route");
+        const auto center = button->screen_rect().center();
+        click(manager, static_cast<int>(center.x), static_cast<int>(center.y));
+        manager.on_update(0);
+        return;
+    }
+    throw std::runtime_error("Expected room button is missing from the map");
+}
+
+void enter_portal(elysia::scene::SceneManager& manager)
+{
+    const auto* query = ELYSIA_OBJECT_QUERY;
+    auto* player = query->find_object<PlayerCharacter>();
+    const auto* portal = query->find_object<Portal>();
+    check(player && portal, "active room has a player and portal");
+    player->set_position(portal->position());
+    manager.on_update(0);
+}
+
+std::vector<TileType> terrain_layout(const DungeonRoom& map)
+{
+    std::vector<TileType> result;
+    for (const auto& row : map.tile_map().data())
+        for (const auto& tile : row)
+            result.push_back(tile.type);
+    return result;
+}
+
+std::vector<RoomID> path_to_exit(const Floor& floor)
+{
+    const auto start = *floor.find_position(floor.start_room_id);
+    const auto end = *floor.find_position(floor.end_room_id);
+    std::array<std::array<std::optional<FloorPosition>, Floor::width>, Floor::height> previous{};
+    previous[start.y][start.x] = start;
+    std::queue<FloorPosition> pending;
+    pending.push(start);
+    while (!pending.empty())
+    {
+        const auto position = pending.front();
+        pending.pop();
+        for (const auto& neighbor : floor.neighbors(position))
+        {
+            if (neighbor && !previous[neighbor->y][neighbor->x])
+            {
+                previous[neighbor->y][neighbor->x] = position;
+                pending.push(*neighbor);
+            }
+        }
+    }
+    check(previous[end.y][end.x].has_value(), "generated exit has a route from the start");
+    std::vector<RoomID> result;
+    for (auto position = end; position != start; position = *previous[position.y][position.x])
+        result.push_back(floor.room_at(position)->id);
+    std::ranges::reverse(result);
+    return result;
+}
+
 void single_floor_run()
 {
     using elysia::scene::SceneManager;
@@ -563,38 +788,20 @@ void single_floor_run()
         manager.on_update(0);
         check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == 0
             && flow.get_current_room_type() == RoomType::Start,
-            "menu Start repeatedly opens a valid starting room");
+            "menu Start repeatedly opens a valid generated starting room");
         const auto* start_map = query->find_object<DungeonRoom>();
         check(start_map && start_map->columns() == 15 && start_map->rows() == 15,
               "fixed start room dimensions");
         check(query->find_objects<Enemy>().empty(), "start room is safe");
         auto* player = query->find_object<PlayerCharacter>();
-        const auto* portal = query->find_object<Portal>();
-        check(player && portal && player->health() == initial_character.health,
-              "each new run creates a fresh player and portal");
-        player->set_position(portal->position());
-        manager.on_update(0);
-        check(manager.current_scene_key() == FloorMap, "start portal opens the skeleton map");
-
-        const auto& floor = flow.current_floor();
-        FloorMapView preview(Rect{0, 0, 1280, 720}, floor,
-                             [&flow](RoomID id) { return flow.can_enter_room(id); }, [](RoomID) {});
-        int button_count = 0;
-        for (std::size_t i = 0; i < preview.child_count(); ++i)
-        {
-            const auto* button = dynamic_cast<const elysia::ui::UiButton*>(preview.child_at(i));
-            if (!button)
-                continue;
-
-            ++button_count;
-            check(!button->is_enabled(), "current start and unconnected exit buttons are disabled");
-            const auto center = button->screen_rect().center();
-            click(manager, static_cast<int>(center.x), static_cast<int>(center.y));
-        }
-        manager.on_update(0);
-        check(button_count == 2 && manager.current_scene_key() == FloorMap
-            && flow.get_current_room_id() == 0 && !flow.find_room(1)->visited,
-            "both endpoints are visible and clicking them cannot leave the skeleton map");
+        check(player && player->health() == initial_character.health && !flow.find_room(0)->cleared,
+              "each new run creates fresh player and room state");
+        enter_portal(manager);
+        check(manager.current_scene_key() == FloorMap, "start portal opens the generated map");
+        choose_map_room(manager, 0, false);
+        choose_map_room(manager, 1, false);
+        check(manager.current_scene_key() == FloorMap && flow.get_current_room_id() == 0,
+              "current room and unreachable exit buttons cannot change rooms");
 
         flow.mark_current_room_cleared();
         press_escape(manager);
@@ -608,6 +815,70 @@ void single_floor_run()
     press_escape(manager);
     manager.on_update(0);
     check(manager.current_scene_key() == MainMenu, "test scene returns to the menu");
+
+    // Use a fixed floor seed for reproducible combat, revisit and exit coverage.
+    flow.restart(42);
+    manager.on_scene_request({elysia::scene::SceneRequestType::Switch,
+                             make_run_room_route(flow.get_current_room_id(), initial_character)});
+    manager.on_update(0);
+    enter_portal(manager);
+    const auto& floor = flow.current_floor();
+    std::optional<RoomID> first_combat;
+    for (const auto& neighbor : floor.neighbors(*floor.find_position(0)))
+    {
+        if (neighbor && floor.room_at(*neighbor)->type == RoomType::Combat)
+            first_combat = floor.room_at(*neighbor)->id;
+    }
+    check(first_combat.has_value(), "generated start connects to a combat room");
+    choose_map_room(manager, *first_combat);
+    check(manager.current_scene_key() == CombatRoom && flow.get_current_room_id() == *first_combat,
+          "map selection enters the generated battle room");
+    const auto* battle_map = query->find_object<DungeonRoom>();
+    check(battle_map != nullptr, "generated combat room has terrain");
+    const auto layout = terrain_layout(*battle_map);
+    const auto enemies = query->find_objects<Enemy>();
+    check(!enemies.empty(), "first combat visit creates enemies");
+    enter_portal(manager);
+    check(manager.current_scene_key() == CombatRoom && !query->find_object<Portal>()->is_reached(),
+          "living enemies block the combat portal");
+    auto* player = query->find_object<PlayerCharacter>();
+    player->receive_attack({0, 0, 10});
+    const float health = player->health();
+    check(health > 0 && health < initial_character.health, "combat test damages the player");
+    for (auto* enemy : enemies)
+        enemy->receive_attack({0, 0, enemy->max_health()});
+    manager.on_update(0);
+    check(manager.current_scene_key() == FloorMap && flow.find_room(*first_combat)->cleared,
+          "clearing generated combat enables the portal and records the clear");
+
+    choose_map_room(manager, 0);
+    check(query->find_object<PlayerCharacter>()->health() == health, "player state survives return to start");
+    enter_portal(manager);
+    choose_map_room(manager, *first_combat);
+    check(query->find_objects<Enemy>().empty(), "cleared generated room does not respawn enemies");
+    check(terrain_layout(*query->find_object<DungeonRoom>()) == layout,
+          "combat revisit preserves seeded terrain");
+    check(query->find_object<PlayerCharacter>()->health() == health, "player state survives combat revisit");
+    enter_portal(manager);
+    choose_map_room(manager, 0);
+    enter_portal(manager);
+
+    for (RoomID id : path_to_exit(floor))
+    {
+        choose_map_room(manager, id);
+        check(flow.get_current_room_id() == id && query->find_object<PlayerCharacter>()->health() == health,
+              "generated route commits movement and retains player state");
+        if (flow.find_room(id)->type == RoomType::Combat)
+        {
+            check(manager.current_scene_key() == CombatRoom, "ordinary generated rooms route to combat");
+            for (auto* enemy : query->find_objects<Enemy>())
+                enemy->receive_attack({0, 0, enemy->max_health()});
+        }
+        else
+            check(manager.current_scene_key() == FixedRoom, "generated exit routes to a fixed room");
+        enter_portal(manager);
+    }
+    check(manager.current_scene_key() == MainMenu, "generated exit portal returns to the main menu");
 
     flow.restart(43);
     auto failed_route = make_run_room_route(flow.get_current_room_id(), initial_character);
@@ -709,7 +980,8 @@ int main()
         placement();
         room_portal<CombatScene>(RoomScenePayload{
             *CharacterManager::instance()->create_context("default_player"), {}});
-        generated_floor_skeleton();
+        generated_floor_tree();
+        generated_run_state();
         fixed_floor_topology();
         floor_map_directions();
         sparse_floor_connections();

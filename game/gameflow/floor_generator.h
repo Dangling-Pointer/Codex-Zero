@@ -11,9 +11,10 @@ public:
 
 private:
     [[nodiscard]] FloorPosition get_start_pos();
-    [[nodiscard]] FloorPosition get_end_pos();
+    [[nodiscard]] FloorPosition get_end_pos(FloorPosition start, int room_number);
+    void fill_rooms(Floor& floor, int room_number);
+    void generate_connections(Floor& floor, int room_number);
 
-private:
     RoomFactory _room_factory;
     elysia::tools::RandomGenerator _random;
 };
