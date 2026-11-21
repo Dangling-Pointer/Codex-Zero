@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "routing/scene_request.h"
@@ -34,6 +35,8 @@
 #include "../ui/core/ui_element.h"
 #include "../ui/input/contracts/ui_input_event_receiver.h"
 #include "../ui/input/contracts/ui_input_frame_receiver.h"
+
+namespace elysia::effects { class EffectManager; }
 
 namespace elysia::scene
 {
@@ -123,7 +126,7 @@ public:
         require_object_addition_allowed();
         // Registration callbacks may add other objects, but cannot retire the
         // object whose interfaces are still being registered or rolled back.
-        const ObjectMutationScope registration_scope(*this, "object registration", false);
+        const ObjectMutationScope registration_scope(*this, "object registration", AdditionPolicy::Allow);
 
         T* raw_object = object.get();
         bool added = false;
@@ -168,6 +171,23 @@ public:
             }
         }
         return raw_object;
+    }
+
+    // Transfers ownership for registration before a subsequent on_after_update().
+    template <typename T>
+    [[nodiscard]] bool enqueue_object(std::unique_ptr<T> object)
+    {
+        static_assert(std::is_base_of_v<elysia::core::GameObject, T> ||
+                      std::is_base_of_v<elysia::ui::UiElement, T>);
+        if (!object || !accepts_object_requests())
+            return false;
+        if constexpr (std::is_base_of_v<elysia::core::GameObject, T>)
+        {
+            if (static_cast<std::size_t>(object->depth_layer()) >= _object_layers.size())
+                return false;
+        }
+        _pending_objects.emplace_back(std::move(object));
+        return true;
     }
 
 protected:
@@ -242,6 +262,7 @@ protected:
 private:
     friend class elysia::scene::SceneInputRouter;
     friend class SceneFactory;
+    friend class elysia::effects::EffectManager;
     friend class SceneManager;
     friend class SceneTestAccess;
 
@@ -266,11 +287,12 @@ private:
     void cancel_camera_activity() noexcept;
     void reset_camera_runtime() noexcept;
 
+    enum class AdditionPolicy { Defer, Allow, Reject };
     class ObjectMutationScope final
     {
     public:
         ObjectMutationScope(const Scene& scene, const char* phase,
-                            bool block_additions = true) noexcept;
+                            AdditionPolicy policy = AdditionPolicy::Defer) noexcept;
         ~ObjectMutationScope();
         ObjectMutationScope(const ObjectMutationScope&) = delete;
         ObjectMutationScope& operator=(const ObjectMutationScope&) = delete;
@@ -279,8 +301,16 @@ private:
         const Scene& _scene;
         const char* _previous_addition_phase;
         const char* _previous_removal_phase;
-        bool _block_additions;
+        AdditionPolicy _policy;
     };
+
+    using PendingObject = std::variant<std::unique_ptr<elysia::core::GameObject>,
+                                       std::unique_ptr<elysia::ui::UiElement>>;
+    std::vector<PendingObject> _pending_objects;
+    bool accepts_object_requests() const noexcept;
+    bool submit_effect_object(std::unique_ptr<elysia::core::GameObject> object);
+    void register_pending_objects();
+    void discard_pending_objects() noexcept;
 
     void require_object_addition_allowed() const;
     void require_object_removal_allowed() const;
@@ -342,6 +372,7 @@ private:
     SceneLifecycleState _lifecycle_state = SceneLifecycleState::Inactive;
     bool _retiring_objects = false;
     bool _runtime_services_attached = false;
+    mutable std::uint32_t _object_enqueue_block_depth = 0;
     mutable std::uint32_t _object_addition_block_depth = 0;
     mutable std::uint32_t _object_removal_block_depth = 0;
     mutable const char* _object_addition_phase = nullptr;

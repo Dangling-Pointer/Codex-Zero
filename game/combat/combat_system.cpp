@@ -1,10 +1,46 @@
 #include "combat_system.h"
+#include "engine/effects/effect_service.h"
+#include "engine/tools/logger.h"
 #include "game/characters/character.h"
 #include "projectiles/bullet.h"
+
+#include <format>
 
 // I kind of know what's happening, but not too much - Akil
 
 using namespace elysia::gameplay::collision;
+
+namespace
+{
+constexpr float damage_number_height = 20.0f;
+constexpr float damage_number_head_gap = 4.0f;
+
+void request_damage_number(float health_lost, elysia::core::Vector2 position)
+{
+    using namespace elysia::effects;
+
+    FloatingNumberEffectSpawnRequest request;
+    request.text = std::format("{:.2f}", health_lost);
+    request.text.erase(request.text.find_last_not_of('0') + 1);
+    if (request.text.back() == '.')
+        request.text.pop_back();
+    request.color = FloatingNumberColor::Red;
+    request.position = position;
+    request.alignment = FloatingNumberAlignment::Center;
+    request.target_height = damage_number_height;
+    request.lifetime_seconds = 0.6;
+    request.effects.motion = FloatingNumberLinearMotion{.offset = {0.0f, -32.0f}};
+    request.effects.fade = FloatingNumberFade{
+        .from_alpha = 255,
+        .to_alpha = 0,
+        .time_range = {0.5f, 1.0f}};
+
+    const auto effect = ELYSIA_EFFECTS->request_floating_number_effect(request);
+    if (!effect)
+        ELYSIA_LOG_WARN("combat", format_effect_request_failure(effect.error()));
+}
+}
+
 CombatSystem::CombatSystem(GameplayCollisionRuntime& runtime) : _runtime(runtime)
 {
     // Listen for gameplay hit-overlap events and provide team relation queries
@@ -122,10 +158,18 @@ void CombatSystem::on_hit_overlap(const HitOverlapEvent& event)
     const AttackInfo info{ bullet.instigator(),
     bullet.attack_instance(),bullet.get_bullet_attributes()->damage };
 
+    // Snapshot the head position before death handling can change the receiver.
+    const auto& rect = receiver.world_rect();
+    const elysia::core::Vector2 damage_number_position{
+        rect.center().x, rect.top() - damage_number_height * 0.5f - damage_number_head_gap};
+    const auto receiver_team = receiver.team();
     const auto result = receiver.receive_attack(info);
 
     if (result.accepted && result.health_lost > 0)
     {
+        if (receiver_team == teams::Enemy)
+            request_damage_number(result.health_lost, damage_number_position);
+
         // Reconstruct a collision event so the projectile can run its normal
         // entity-hit response after combat damage has been accepted
         elysia::physics::CollisionEvent collision;

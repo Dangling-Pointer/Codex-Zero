@@ -122,7 +122,7 @@ std::expected<void, EffectRequestFailure> EffectManager::dispatch(const Animatio
     auto effect = _animation_effect_factory.create(request, *definition);
     if (!effect)
         return std::unexpected(std::move(effect.error()));
-    if (!_active_scene->add_object(std::move(*effect)))
+    if (!_active_scene->submit_effect_object(std::move(*effect)))
         return std::unexpected(make_effect_request_failure(EffectRequestError::SceneRejected,
             "Active scene rejected the animation effect.", request.effect_key));
     return {};
@@ -136,7 +136,7 @@ std::expected<void, EffectRequestFailure> EffectManager::dispatch(const Floating
     auto effect = _floating_number_effect_factory.create(request);
     if (!effect)
         return std::unexpected(std::move(effect.error()));
-    if (!_active_scene->add_object(std::move(*effect)))
+    if (!_active_scene->submit_effect_object(std::move(*effect)))
         return std::unexpected(make_effect_request_failure(EffectRequestError::SceneRejected,
             "Active scene rejected the floating number effect."));
     return {};

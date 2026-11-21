@@ -14,6 +14,11 @@
 #include "game/combat/projectile_service.h"
 #include "engine/core/render/render_command.h"
 #include "engine/core/render/colors.h"
+#include "engine/builtin/resources/builtin_resources.h"
+#include "engine/effects/runtime/effect_manager.h"
+#include "engine/resources/resource_service.h"
+#include "engine/typography/font_resolver.h"
+#include <filesystem>
 #include <limits>
 #include <stdexcept>
 #include <iostream>
@@ -58,6 +63,117 @@ Bullet* fire(TestScene& scene, Character& source, elysia::core::Vector2 at,
     return scene.add_object(std::move(bullet));
 }
 void step(test::SceneHarness<TestScene>& host) { host.update(1.0/60); }
+
+// Exercise successful effect creation; renderer-less tests return before Scene::add_object().
+struct OffscreenEffects
+{
+    std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> surface{nullptr, SDL_DestroySurface};
+    std::unique_ptr<SDL_Renderer, decltype(&SDL_DestroyRenderer)> renderer{nullptr, SDL_DestroyRenderer};
+    elysia::typography::FontResolver fonts;
+
+    OffscreenEffects()
+    {
+        check(SDL_Init(0), "SDL initialization");
+        check(TTF_Init(), "TTF initialization");
+        check(MIX_Init(), "mixer initialization");
+        surface.reset(SDL_CreateSurface(1280, 720, SDL_PIXELFORMAT_RGBA32));
+        check(surface != nullptr, "offscreen surface");
+        renderer.reset(SDL_CreateSoftwareRenderer(surface.get()));
+        check(renderer != nullptr, "software renderer");
+
+        elysia::typography::UiTypographyProfile::PointSizes sizes;
+        sizes.fill(20);
+        elysia::typography::FontSettings settings;
+        settings.ui.typography_override = elysia::typography::UiTypographyProfile{sizes};
+        const auto resolved = elysia::typography::resolve_font_settings(settings);
+        check(resolved.has_value(), "test font settings");
+        const elysia::builtin::BuiltinAssetCatalog catalog{
+            std::filesystem::path(__FILE__).parent_path().parent_path()};
+        const auto loaded = elysia::builtin::BuiltinResources::instance()->initialize(
+            renderer.get(), catalog, resolved->engine_point_sizes());
+        if (!loaded) throw std::runtime_error(loaded.error());
+        const std::vector<std::string> languages{"en"};
+        const auto configured = fonts.configure(*resolved, *ELYSIA_RESOURCES, languages);
+        if (!configured) throw std::runtime_error(configured.error().message);
+        elysia::effects::EffectManager::instance()->set_runtime_dependencies(renderer.get(), &fonts);
+    }
+
+    ~OffscreenEffects()
+    {
+        elysia::effects::EffectManager::instance()->set_runtime_dependencies(nullptr, nullptr);
+        fonts.shutdown();
+        elysia::builtin::BuiltinResources::instance()->shutdown();
+        renderer.reset();
+        surface.reset();
+        MIX_Quit();
+        TTF_Quit();
+        SDL_Quit();
+    }
+};
+
+std::vector<elysia::effects::FloatingNumberEffect*> damage_numbers(const TestScene& scene)
+{
+    std::vector<elysia::effects::FloatingNumberEffect*> numbers;
+    const auto& objects = static_cast<const elysia::object_query::IGameObjectQueryRuntime&>(scene);
+    objects.visit_game_objects(elysia::core::DepthLayerMask::all(), [&](auto& object) {
+        if (auto* number = dynamic_cast<elysia::effects::FloatingNumberEffect*>(&object))
+            numbers.push_back(number);
+        return true;
+    });
+    return numbers;
+}
+
+void floating_numbers_from_collision_callback()
+{
+    OffscreenEffects effects;
+    test::SceneHarness<TestScene> host;
+    auto& scene = host.scene();
+    auto* source = scene.create_and_add_object<PlayerCharacter>(elysia::core::Vector2{500,500});
+    auto* enemy = scene.create_and_add_object<MultiHurt>();
+    int hits = 0;
+    scene.combat_system().on_damage = [&](auto, const auto&, const auto& result) {
+        if (result.health_lost > 0)
+        {
+            ++hits;
+            check(damage_numbers(scene).empty(), "engine defers effect registration during physics callback");
+        }
+    };
+    fire(scene, *source, {110,110}, 200);
+    step(host);
+    check(hits == 1 && enemy->is_dead(), "lethal multi-hurt hit resolves once");
+    check(scene.physics_world().registered_object_count() == 2, "consumed bullet is retired");
+    auto numbers = damage_numbers(scene);
+    check(numbers.size() == 1, "successful hit creates one floating number after physics");
+    check(numbers.front()->position().distance_squared_to({115,86}) < 0.001f,
+        "floating number starts at the captured head position");
+    std::vector<elysia::core::RenderCommand> commands;
+    numbers.front()->submit_render_commands(commands);
+    check(commands.size() == 3 && commands.front().texture != nullptr,
+        "lethal overkill displays actual 100 damage using real glyph textures");
+    host.update(0.45);
+    numbers = damage_numbers(scene);
+    check(numbers.size() == 1 && numbers.front()->position().y < 86, "number floats upward");
+    commands.clear();
+    numbers.front()->submit_render_commands(commands);
+    check(!commands.empty() && commands.front().alpha > 0 && commands.front().alpha < 255,
+        "number fades in the second half of its lifetime");
+    host.update(0.2);
+    check(damage_numbers(scene).empty(), "number expires without being spawned again");
+
+    fire(scene, *source, {510,510}, 0, 1, game::collision::categories::NeutralAttack);
+    step(host);
+    check(damage_numbers(scene).empty(), "zero damage produces no floating number");
+    scene.combat_system().on_damage = {};
+    fire(scene, *source, {510,510}, 10, 0, game::collision::categories::NeutralAttack);
+    step(host);
+    check(source->health() == 90 && damage_numbers(scene).empty(),
+        "player takes damage without a floating number");
+    host.leave();
+    host.enter();
+    step(host);
+    check(damage_numbers(scene).empty(), "scene exit clears floating numbers and pending damage");
+}
+
 void health()
 {
     CountingEnemy enemy({0,0});
@@ -188,6 +304,6 @@ int main()
         std::_Exit(1);
     });
 #endif
-    try { std::cerr << "health\n"; health(); std::cerr << "routing\n"; routing(); std::cerr << "teams\n"; teams_and_zero(); growth_pause_and_queue(); std::cerr << "lifecycle\n"; lifecycle(); std::cout << "Combat tests passed\n"; }
+    try { std::cerr << "health\n"; health(); std::cerr << "routing\n"; routing(); std::cerr << "teams\n"; teams_and_zero(); growth_pause_and_queue(); std::cerr << "lifecycle\n"; lifecycle(); std::cerr << "floating numbers\n"; floating_numbers_from_collision_callback(); std::cout << "Combat tests passed\n"; }
     catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }

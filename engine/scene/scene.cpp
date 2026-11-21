@@ -56,15 +56,16 @@ Scene::~Scene()
 }
 
 Scene::ObjectMutationScope::ObjectMutationScope(
-    const Scene& scene, const char* phase, bool block_additions) noexcept
+    const Scene& scene, const char* phase, AdditionPolicy policy) noexcept
     : _scene(scene)
     , _previous_addition_phase(scene._object_addition_phase)
     , _previous_removal_phase(scene._object_removal_phase)
-    , _block_additions(block_additions)
+    , _policy(policy)
 {
+    if (_policy == AdditionPolicy::Reject) ++_scene._object_enqueue_block_depth;
     ++_scene._object_removal_block_depth;
     _scene._object_removal_phase = phase;
-    if (_block_additions)
+    if (_policy != AdditionPolicy::Allow)
     {
         ++_scene._object_addition_block_depth;
         _scene._object_addition_phase = phase;
@@ -73,13 +74,63 @@ Scene::ObjectMutationScope::ObjectMutationScope(
 
 Scene::ObjectMutationScope::~ObjectMutationScope()
 {
+    if (_policy == AdditionPolicy::Reject) --_scene._object_enqueue_block_depth;
     --_scene._object_removal_block_depth;
     _scene._object_removal_phase = _previous_removal_phase;
-    if (_block_additions)
+    if (_policy != AdditionPolicy::Allow)
     {
         --_scene._object_addition_block_depth;
         _scene._object_addition_phase = _previous_addition_phase;
     }
+}
+
+bool Scene::accepts_object_requests() const noexcept
+{
+    return (_lifecycle_state == SceneLifecycleState::Entering || _lifecycle_state == SceneLifecycleState::Active)
+        && !_retiring_objects && _object_enqueue_block_depth == 0;
+}
+
+bool Scene::submit_effect_object(std::unique_ptr<elysia::core::GameObject> object)
+{
+    if (!accepts_object_requests())
+        return false;
+    if (_object_addition_block_depth != 0)
+        return enqueue_object(std::move(object));
+    return add_object(std::move(object)) != nullptr;
+}
+
+void Scene::register_pending_objects()
+{
+    if (_pending_objects.empty() || _object_addition_block_depth != 0)
+        return;
+    std::vector<PendingObject> batch;
+    batch.swap(_pending_objects);
+    try
+    {
+        for (auto& entry : batch)
+        {
+            const bool registered = std::visit([this](auto& object) {
+                return add_object(std::move(object)) != nullptr;
+            }, entry);
+            if (!registered)
+                throw SceneBoundaryLogicError(SceneBoundary::ObjectRegistration, "Queued object registration failed.");
+        }
+    }
+    catch (...)
+    {
+        detail::SceneFailureCollector failures;
+        failures.capture(SceneKeys::Invalid, SceneBoundary::ObjectRegistration, "Queued object registration");
+        const ObjectMutationScope scope(*this, "queued object disposal", AdditionPolicy::Reject);
+        batch.clear();
+        _pending_objects.clear();
+        failures.rethrow_if_failed();
+    }
+}
+
+void Scene::discard_pending_objects() noexcept
+{
+    const ObjectMutationScope scope(*this, "queued object disposal", AdditionPolicy::Reject);
+    _pending_objects.clear();
 }
 
 void Scene::require_object_addition_allowed() const
@@ -173,6 +224,7 @@ void Scene::lifecycle_enter(const ScenePayload& payload)
     }
     catch (...)
     {
+        discard_pending_objects();
         cancel_camera_activity();
         if (_audio_runtime) _audio_runtime->clear();
         _lifecycle_state = SceneLifecycleState::Inactive;
@@ -185,6 +237,7 @@ void Scene::lifecycle_exit()
     if (_lifecycle_state != SceneLifecycleState::Active)
         throw std::logic_error("Scene can only exit from the active state.");
     _lifecycle_state = SceneLifecycleState::Exiting;
+    discard_pending_objects();
     detail::SceneFailureCollector failures;
     try
     {
@@ -215,6 +268,7 @@ void Scene::lifecycle_reset()
     if (_lifecycle_state != SceneLifecycleState::Inactive)
         throw std::logic_error("Scene can only reset while inactive.");
     _lifecycle_state = SceneLifecycleState::Resetting;
+    discard_pending_objects();
     if (_audio_runtime) _audio_runtime->clear();
     detail::SceneFailureCollector failures;
     try
@@ -322,6 +376,7 @@ void Scene::lifecycle_update(double delta)
         if (_camera_runtime)
             _camera_runtime->advance(delta, _paused, *this);
 
+        register_pending_objects();
         on_after_update(delta);
         if (_audio_runtime) _audio_runtime->update(delta);
     }
@@ -539,7 +594,7 @@ void Scene::register_scene_object_interfaces(elysia::core::SceneObject* object)
         failures.capture(SceneKeys::Invalid,SceneBoundary::ObjectRegistration,"Object registration callback");
         failures.attempt_cleanup(SceneKeys::Invalid,SceneBoundary::ObjectRemoval,"ObjectRegistration rollback callback",
             [&] {
-                const ObjectMutationScope mutation_scope(*this, "object registration rollback");
+                const ObjectMutationScope mutation_scope(*this, "object registration rollback", AdditionPolicy::Reject);
                 on_scene_object_removing(*object);
             });
         failures.rethrow_if_failed();
@@ -705,6 +760,7 @@ std::span<const elysia::physics::ColliderId> Scene::registered_physics_colliders
 void Scene::clear_scene_objects()
 {
     require_object_removal_allowed();
+    discard_pending_objects();
     for (auto& layer : _object_layers)
         for (auto& object : layer)
             if (object)
@@ -719,7 +775,7 @@ void Scene::rollback_owned_object(elysia::core::SceneObject* object) noexcept
 {
     if (!object)
         return;
-    const ObjectMutationScope mutation_scope(*this, "object registration rollback");
+    const ObjectMutationScope mutation_scope(*this, "object registration rollback", AdditionPolicy::Reject);
     const auto registration = std::ranges::find_if(
         _physics_registrations,
         [object](const PhysicsRegistrationEntry& entry) { return entry.object == object; });
@@ -742,6 +798,7 @@ void Scene::rollback_owned_object(elysia::core::SceneObject* object) noexcept
 void Scene::release_owned_objects_noexcept() noexcept
 {
     _retiring_objects = true;
+    discard_pending_objects();
     for (const auto& registration : _physics_registrations)
     {
         if (_physics_world)
