@@ -96,6 +96,21 @@ const TileMap &DungeonRoom::tile_map() const noexcept
     return _tile_map;
 }
 
+std::vector<game::RoomCorridorLayout> DungeonRoom::corridors() const
+{
+    auto result = _generator->corridors();
+    const auto to_world = [this](const elysia::core::Rect& bounds) {
+        return elysia::core::Rect{position() + bounds.position() * k_tile_render_size,
+                                  bounds.size() * k_tile_render_size};
+    };
+    for (auto& corridor : result)
+    {
+        corridor.footprint = to_world(corridor.footprint);
+        corridor.walkable = to_world(corridor.walkable);
+    }
+    return result;
+}
+
 elysia::core::Vector2 DungeonRoom::world_origin() const noexcept
 {
     return position();

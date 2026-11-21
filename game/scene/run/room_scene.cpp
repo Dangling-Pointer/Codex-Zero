@@ -1,4 +1,5 @@
 #include "room_scene.h"
+#include "room_transition.h"
 
 #include "engine/tools/logger.h"
 #include "game/characters/player_character.h"
@@ -20,13 +21,9 @@ bool positive_dimensions(elysia::core::Vector2 size)
 {
     return std::isfinite(size.x) && std::isfinite(size.y) && size.x >= 1 && size.y >= 1;
 }
-}
 
-void RoomScene::validate_payload(const RoomScenePayload& payload)
+void validate_room_config(const RoomBuildConfig& config)
 {
-    PlayerCharacter::validate_context(payload.character);
-
-    const auto& config = payload.room;
     const auto& map = config.map_config;
 
     // Match the physics world's tile-count limit before allocating a map.
@@ -37,27 +34,7 @@ void RoomScene::validate_payload(const RoomScenePayload& payload)
         positive_dimensions(map.baseRoomSize) && positive_dimensions(map.minSubRoomSize);
     if (!valid_grid || !valid_room_sizes || map.numSubRooms < 0 || map.minGap < 0)
         throw std::invalid_argument("Invalid room map configuration");
-
-    if (!payload.room_id)
-    {
-        if (payload.from_room)
-            throw std::invalid_argument("Dungeon room entry requires a destination");
-        return;
-    }
-
-    const auto& flow = *GameFlowManager::instance();
-    const auto current_room = flow.get_current_room_id();
-    const auto destination = *payload.room_id;
-    if (payload.from_room)
-    {
-        if (*payload.from_room != current_room || !flow.can_enter_room(destination))
-            throw std::invalid_argument("Invalid dungeon room entry");
-        return;
-    }
-
-    const auto* room = flow.find_room(destination);
-    if (!room || room->type != RoomType::Start || room->id != current_room)
-        throw std::invalid_argument("Invalid dungeon room entry");
+}
 }
 
 RoomScene::RoomScene() : GameplayScene(game::room_features()) {}
@@ -70,7 +47,9 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
     if (!incoming)
         throw std::invalid_argument("RoomScene requires RoomScenePayload");
 
-    validate_payload(*incoming);
+    PlayerCharacter::validate_context(incoming->character);
+    validate_room_config(incoming->room);
+    validate_room_entry(*incoming);
 
     if (_active)
         return;
@@ -88,13 +67,14 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
             throw std::runtime_error("Cannot bind room projectile service");
 
         build_room_objects(incoming->character);
+        if (incoming->boundary_entry)
+            game::restore_boundary_entry(*incoming->boundary_entry, _room.corridors,
+                                         *_room.collision_world, *_player);
         create_room_content();
 
-        constexpr auto slot = elysia::camera::CameraSlot::Main;
-        camera_runtime().set_follow_strategy(slot, std::make_unique<elysia::camera::HardFollowStrategy>());
-        camera_runtime().set_zoom(slot, 2.0f);
-        camera_runtime().set_center(slot, _player->center());
+        game::initialize_room_camera(camera_runtime(), *_player, incoming->boundary_entry);
 
+        _previous_player_center = _player->center();
         _active = true;
     }
     catch (...)
@@ -151,6 +131,8 @@ void RoomScene::build_room_objects(const CharacterContext& character)
 void RoomScene::clear_room() noexcept
 {
     _active = false;
+    _transition_requested = false;
+    _previous_player_center = {};
     game::release_player(_player_controller);
     _combat.clear();
     _projectiles.unbind_scene();
@@ -189,11 +171,31 @@ void RoomScene::on_after_update(double)
 {
     if (!_active || is_paused() || !_room.map || _room.map->is_destroyed())
         return;
-    if (!_portal || !_player || _player->is_destroyed() || !_player->is_active() || _player->is_dead())
+    if (_transition_requested || !_player || _player->is_destroyed() || !_player->is_active() || _player->is_dead())
         return;
 
-    if (can_leave_room())
+    const bool leaving_allowed = can_leave_room();
+    if (leaving_allowed && try_leave_through_boundary())
+        return;
+    _previous_player_center = _player->center();
+
+    if (_portal && leaving_allowed)
         _portal->check_reached(_player->world_rect());
+}
+
+bool RoomScene::try_leave_through_boundary()
+{
+    if (!_room_id)
+        return false;
+
+    const auto route = game::find_boundary_route(
+        *_room_id, _room.corridors, _previous_player_center, *_player, camera());
+    if (!route)
+        return false;
+
+    request_scene_switch(*route);
+    _transition_requested = true;
+    return true;
 }
 
 const Room* RoomScene::run_room() const

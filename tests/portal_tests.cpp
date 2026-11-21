@@ -23,6 +23,8 @@
 #include <queue>
 #include <stdexcept>
 
+void fixed_room_corridor_tests();
+
 namespace
 {
 using elysia::core::Rect;
@@ -84,6 +86,7 @@ void portal_trigger()
 void placement()
 {
     MapConfig config;
+    config.baseRoomSize = {10, 10};
     config.numSubRooms = 0;
     DungeonRoom map(config, {12, 12});
     map.set_position({128, -64});
@@ -449,9 +452,9 @@ GeneratedFloorStats check_generated_floor(const Floor& floor, std::uint64_t seed
         const FloorPosition expected{start->x + start_offsets[i].x, start->y + start_offsets[i].y};
         check(start_neighbors[i] == expected, "start connects to its four immediately adjacent cells");
         const auto* neighbor = floor.room_at(expected);
-        check(neighbor && neighbor->type == RoomType::Combat
+        check(neighbor && neighbor->type == RoomType::Event
             && neighbor->id == static_cast<std::uint64_t>(first_id) + 2 + i,
-            "starting combat IDs follow up, right, down and left without being overwritten");
+            "starting event IDs follow up, right, down and left without being overwritten");
     }
     check(std::ranges::find(start_neighbors, end) == start_neighbors.end(),
           "exit never connects directly to the start");
@@ -470,7 +473,7 @@ GeneratedFloorStats check_generated_floor(const Floor& floor, std::uint64_t seed
             ++stats.room_count;
             ids.push_back(room->id);
             if (room->id != first_id && room->id != first_id + 1)
-                check(room->type == RoomType::Combat, "all additional rooms are ordinary combat rooms");
+                check(room->type == RoomType::Event, "all additional rooms are event test rooms");
             check(!room->discovered && !room->visited && !room->cleared
                 && !room->event_triggered && !room->content_id, "generation initializes every room state");
 
@@ -642,7 +645,7 @@ void generated_run_state()
         check_same_layout(generator.generate(seed, 0, config), floor);
         const auto start = *floor.find_position(floor.start_room_id);
         const auto neighbors = floor.neighbors(start);
-        std::optional<RoomID> combat_neighbor;
+        std::optional<RoomID> event_neighbor;
         int selectable_rooms = 0;
         for (int y = 0; y < Floor::height; ++y)
         {
@@ -662,8 +665,8 @@ void generated_run_state()
                       "only connected neighbors are initially selectable");
                 if (flow.can_enter_room(room->id))
                     ++selectable_rooms;
-                if (adjacent && room->type == RoomType::Combat)
-                    combat_neighbor = room->id;
+                if (adjacent && room->type == RoomType::Event)
+                    event_neighbor = room->id;
             }
         }
         check(selectable_rooms == 4 && !flow.can_enter_room(floor.end_room_id),
@@ -671,9 +674,9 @@ void generated_run_state()
         check(flow.get_current_depth() == 0 && flow.room_seed(2) == seed + 2,
               "single-floor depth and room terrain seeds remain consistent");
         check(!flow.can_enter_room(std::numeric_limits<RoomID>::max()), "invalid IDs cannot be selected");
-        check(combat_neighbor && flow.try_enter_room(*combat_neighbor), "generated combat neighbor is reachable");
+        check(event_neighbor && flow.try_enter_room(*event_neighbor), "generated event neighbor is reachable");
         flow.mark_current_room_cleared();
-        check(flow.try_enter_room(0) && flow.find_room(*combat_neighbor)->cleared,
+        check(flow.try_enter_room(0) && flow.find_room(*event_neighbor)->cleared,
               "visited room travel preserves combat clear state until restart");
     }
 }
@@ -791,8 +794,9 @@ void single_floor_run()
             && flow.get_current_room_type() == RoomType::Start,
             "menu Start repeatedly opens a valid generated starting room");
         const auto* start_map = query->find_object<DungeonRoom>();
-        check(start_map && start_map->columns() == 15 && start_map->rows() == 15,
-              "fixed start room dimensions");
+        check(start_map && start_map->columns() == 15 + 2 * kStandardRoomCorridors.horizontal_length
+            && start_map->rows() == 15 + 2 * kStandardRoomCorridors.vertical_length,
+              "fixed start keeps its 15 by 15 body with the shared directional corridor preset");
         check(query->find_objects<Enemy>().empty(), "start room is safe");
         auto* player = query->find_object<PlayerCharacter>();
         check(player && player->health() == initial_character.health && !flow.find_room(0)->cleared,
@@ -817,49 +821,30 @@ void single_floor_run()
     manager.on_update(0);
     check(manager.current_scene_key() == MainMenu, "test scene returns to the menu");
 
-    // Use a fixed floor seed for reproducible combat, revisit and exit coverage.
+    // Event test rooms exercise map selection, state transfer and revisits independently of combat.
     flow.restart(42);
     manager.on_scene_request({elysia::scene::SceneRequestType::Switch,
                              make_run_room_route(flow.get_current_room_id(), initial_character)});
     manager.on_update(0);
     enter_portal(manager);
     const auto& floor = flow.current_floor();
-    std::optional<RoomID> first_combat;
-    for (const auto& neighbor : floor.neighbors(*floor.find_position(0)))
-    {
-        if (neighbor && floor.room_at(*neighbor)->type == RoomType::Combat)
-            first_combat = floor.room_at(*neighbor)->id;
-    }
-    check(first_combat.has_value(), "generated start connects to a combat room");
-    choose_map_room(manager, *first_combat);
-    check(manager.current_scene_key() == CombatRoom && flow.get_current_room_id() == *first_combat,
-          "map selection enters the generated battle room");
-    const auto* battle_map = query->find_object<DungeonRoom>();
-    check(battle_map != nullptr, "generated combat room has terrain");
-    const auto layout = terrain_layout(*battle_map);
-    const auto enemies = query->find_objects<Enemy>();
-    check(!enemies.empty(), "first combat visit creates enemies");
-    enter_portal(manager);
-    check(manager.current_scene_key() == CombatRoom && !query->find_object<Portal>()->is_reached(),
-          "living enemies block the combat portal");
+    const RoomID first_event = 2;
+    choose_map_room(manager, first_event);
+    check(manager.current_scene_key() == FixedRoom && flow.get_current_room_id() == first_event,
+          "map selection enters the generated event room");
+    const auto layout = terrain_layout(*query->find_object<DungeonRoom>());
+    check(query->find_objects<Enemy>().empty(), "event test rooms have no enemies");
     auto* player = query->find_object<PlayerCharacter>();
     player->receive_attack({0, 0, 10});
     const float health = player->health();
-    check(health > 0 && health < initial_character.health, "combat test damages the player");
-    for (auto* enemy : enemies)
-        enemy->receive_attack({0, 0, enemy->max_health()});
-    manager.on_update(0);
-    check(manager.current_scene_key() == FloorMap && flow.find_room(*first_combat)->cleared,
-          "clearing generated combat enables the portal and records the clear");
-
+    enter_portal(manager);
     choose_map_room(manager, 0);
     check(query->find_object<PlayerCharacter>()->health() == health, "player state survives return to start");
     enter_portal(manager);
-    choose_map_room(manager, *first_combat);
-    check(query->find_objects<Enemy>().empty(), "cleared generated room does not respawn enemies");
+    choose_map_room(manager, first_event);
     check(terrain_layout(*query->find_object<DungeonRoom>()) == layout,
-          "combat revisit preserves seeded terrain");
-    check(query->find_object<PlayerCharacter>()->health() == health, "player state survives combat revisit");
+          "event revisit preserves corridor terrain");
+    check(query->find_object<PlayerCharacter>()->health() == health, "player state survives event revisit");
     enter_portal(manager);
     choose_map_room(manager, 0);
     enter_portal(manager);
@@ -869,18 +854,10 @@ void single_floor_run()
         choose_map_room(manager, id);
         check(flow.get_current_room_id() == id && query->find_object<PlayerCharacter>()->health() == health,
               "generated route commits movement and retains player state");
-        if (flow.find_room(id)->type == RoomType::Combat)
-        {
-            check(manager.current_scene_key() == CombatRoom, "ordinary generated rooms route to combat");
-            for (auto* enemy : query->find_objects<Enemy>())
-                enemy->receive_attack({0, 0, enemy->max_health()});
-        }
-        else
-            check(manager.current_scene_key() == FixedRoom, "generated exit routes to a fixed room");
+        check(manager.current_scene_key() == FixedRoom, "generated Event and End rooms route to fixed rooms");
         enter_portal(manager);
     }
     check(manager.current_scene_key() == MainMenu, "generated exit portal returns to the main menu");
-
     flow.restart(43);
     auto failed_route = make_run_room_route(flow.get_current_room_id(), initial_character);
     auto room = *elysia::scene::try_scene_payload<RoomScenePayload>(failed_route.payload);
@@ -904,6 +881,13 @@ template<class T> std::vector<T*> objects(elysia::scene::Scene& scene)
     return result;
 }
 
+// Keep geometry and cleanup checks independent of the corridor's automatic reload experiment.
+class CorridorGeometryTestScene : public CorridorScene
+{
+public:
+    void on_before_update(double delta) override { RoomScene::on_before_update(delta); }
+};
+
 void corridor_movement_and_lifecycle()
 {
     const auto character = *CharacterManager::instance()->create_context("default_player");
@@ -911,7 +895,7 @@ void corridor_movement_and_lifecycle()
     const auto* payload = elysia::scene::try_scene_payload<RoomScenePayload>(route.payload);
     check(route.target == Corridor && payload && !payload->room_id && !payload->from_room,
           "corridor route is independent of dungeon room routing");
-    test::SceneHarness<CorridorScene> host(route.payload);
+    test::SceneHarness<CorridorGeometryTestScene> host(route.payload);
     auto& scene = host.scene();
     using Key = elysia::input::RawInputControl;
 
@@ -936,11 +920,11 @@ void corridor_movement_and_lifecycle()
         auto* player = players.front();
         check(player->physics_world() != nullptr, "corridor player is bound to physics");
         auto& world = *player->physics_world();
-        check(map->columns() == 48 && map->rows() == 7, "corridor uses the fixed 48 by 7 layout");
+        check(map->columns() == payload->room.grid_size.x && map->rows() == payload->room.grid_size.y, "corridor uses the configured standalone layout");
         check(game::walkable_bounds(*map, player->world_rect()), "corridor player spawns on floor");
         check(std::abs(player->center().y - map->center().y) < 0.01f
-            && player->position().x < map->position().x + map->tile_size().x * 3,
-            "corridor spawn is centered vertically near the left end");
+            && player->center().x < map->center().x,
+            "corridor spawn is centered vertically on the left side");
         check(scene.camera().zoom() == 2.0f, "corridor keeps the room camera zoom");
         check(world.registered_object_count() == 1,
               "corridor reentry has no leftover physics objects");
@@ -959,6 +943,8 @@ void corridor_movement_and_lifecycle()
         for (const auto key : {Key::KeyA, Key::KeyD, Key::KeyW, Key::KeyS})
         {
             auto test_spawn = spawn;
+            if (key == Key::KeyA)
+                test_spawn.x = interior.left() + 8;
             if (key == Key::KeyD)
                 test_spawn.x = interior.right() - player->size().x - 8;
             check(world.teleport_object(player->physics_handle(), test_spawn,
@@ -1005,7 +991,7 @@ void corridor_menu_entry()
         check(manager.current_scene_key() == Corridor, "character selection button opens corridor test");
         const auto* query = ELYSIA_OBJECT_QUERY;
         const auto maps = query->find_objects<DungeonRoom>();
-        check(maps.size() == 1 && maps.front()->columns() == 48 && maps.front()->rows() == 7,
+        check(maps.size() == 1 && maps.front()->columns() == 60 && maps.front()->rows() == 7,
               "menu corridor entry uses its configured fixed layout");
         check(query->find_objects<PlayerCharacter>().size() == 1
             && query->find_objects<Portal>().empty() && query->find_objects<Enemy>().empty(),
@@ -1107,6 +1093,7 @@ int main()
     {
         portal_trigger();
         placement();
+        fixed_room_corridor_tests();
         room_portal<CombatScene>(RoomScenePayload{
             *CharacterManager::instance()->create_context("default_player"), {}});
         generated_floor_tree();

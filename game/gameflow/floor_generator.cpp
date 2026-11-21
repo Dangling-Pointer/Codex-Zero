@@ -129,7 +129,7 @@ void FloorGenerator::fill_rooms(Floor& floor, int room_number)
             throw std::logic_error("Generated room would overwrite an occupied position");
 
         floor.rooms[position.y][position.x] = _room_factory.create(
-            static_cast<RoomID>(next_id++), RoomType::Combat, RoomDirection::None);
+            static_cast<RoomID>(next_id++), RoomType::Event, RoomDirection::None);
         ++placed;
     };
 

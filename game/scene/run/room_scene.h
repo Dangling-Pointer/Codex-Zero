@@ -6,6 +6,7 @@
 #include "game/combat/projectile_manager.h"
 #include "room_scene_payload.h"
 #include "game/combat/wand/wand.h"
+#include "game/map/room_corridor_layout.h"
 
 class PlayerCharacter;
 class Portal;
@@ -16,6 +17,7 @@ struct RoomBuildResult
     elysia::core::GameObject* map = nullptr;
     elysia::physics::ITileCollisionWorld* collision_world = nullptr;
     elysia::core::Vector2 player_spawn;
+    std::vector<game::RoomCorridorLayout> corridors;
 };
 
 class RoomScene : public elysia::gameplay::GameplayScene
@@ -27,7 +29,7 @@ public:
     void on_exit() final;
     void on_reset() final;
     void on_before_update(double delta) override;
-    void on_after_update(double delta)override;
+    void on_after_update(double delta) override;
     [[nodiscard]] std::optional<CharacterContext> capture_character_context() const;
 
 protected:
@@ -57,10 +59,10 @@ protected:
     void on_control_target_removing(elysia::core::SceneObject& object) override;
 
 private:
-    static void validate_payload(const RoomScenePayload& payload);
     void build_room_objects(const CharacterContext& character);
     void clear_room() noexcept;
     void leave_through_portal();
+    [[nodiscard]] bool try_leave_through_boundary();
 
     std::optional<RoomID> _room_id;
     std::optional<RoomID> _from_room;
@@ -74,6 +76,8 @@ private:
     RoomBuildConfig _config;
 
     bool _active = false;
+    bool _transition_requested = false;
+    elysia::core::Vector2 _previous_player_center;
 
     Wand _test_wand;
     ProjectileManager _projectiles;

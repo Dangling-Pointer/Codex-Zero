@@ -2,35 +2,141 @@
 
 #include "game/gameflow/game_flow_manager.h"
 #include "game/scene/scene_keys.h"
+#include "game/map/room_corridor_layout.h"
+#include "engine/camera/camera.h"
 
+#include <array>
+#include <cmath>
 #include <stdexcept>
+#include <utility>
 
-elysia::scene::SceneRoute make_run_room_route(
-    RoomID room_id, const CharacterContext& character, std::optional<RoomID> from_room)
+namespace
+{
+bool finite(elysia::core::Vector2 value)
+{
+    return std::isfinite(value.x) && std::isfinite(value.y);
+}
+
+const Room& require_boundary_destination(RoomID from, RoomDirection exit)
 {
     const auto& flow = *GameFlowManager::instance();
-    const Room* room = flow.find_room(room_id);
+    const auto* source = flow.find_room(from);
+    const auto* target = flow.connected_room(from, exit);
+    if (flow.get_current_room_id() != from || !source || !target
+        || !supports_room_corridors(source->type) || !supports_room_corridors(target->type))
+        throw std::invalid_argument("Boundary route requires connected fixed rooms");
 
-    if (!room)
-        throw std::invalid_argument("Unknown dungeon room");
+    return *target;
+}
 
+RoomScenePayload make_room_payload(
+    const Room& room, const CharacterContext& character, std::optional<RoomID> from_room)
+{
+    const auto& flow = *GameFlowManager::instance();
     RoomScenePayload payload{
         .character = character,
         .room = {},
-        .room_id = room_id,
+        .room_id = room.id,
         .from_room = from_room,
     };
 
-    if (room->type == RoomType::Combat || room->type == RoomType::Elite)
+    if (room.type == RoomType::Combat || room.type == RoomType::Elite)
     {
-        payload.room.map_config.seed = flow.room_seed(room_id);
-        return {.target = CombatRoom, .payload = payload};
+        payload.room.map_config.seed = flow.room_seed(room.id);
+        return payload;
     }
 
     const elysia::core::Vector2 start_grid{15, 15};
     const elysia::core::Vector2 default_grid{12, 10};
-    payload.room.grid_size = room->type == RoomType::Start ? start_grid : default_grid;
+    payload.room.grid_size = room.type == RoomType::Start ? start_grid : default_grid;
     payload.room.map_config.baseRoomSize = payload.room.grid_size;
     payload.room.map_config.numSubRooms = 0;
-    return {.target = FixedRoom, .payload = payload};
+
+    constexpr std::array<RoomDirection, 4> directions{
+        RoomDirection::Up, RoomDirection::Right, RoomDirection::Down, RoomDirection::Left,
+    };
+    auto& corridors = payload.room.map_config.corridors;
+    for (const auto direction : directions)
+    {
+        const auto* neighbor = flow.connected_room(room.id, direction);
+        if (neighbor && supports_room_corridors(neighbor->type))
+            corridors.directions = static_cast<RoomDirection>(
+                std::to_underlying(corridors.directions) | std::to_underlying(direction));
+    }
+    payload.room.grid_size += corridors.padding() * 2;
+    return payload;
+}
+}
+
+bool supports_room_corridors(RoomType type) noexcept
+{
+    return type != RoomType::Combat && type != RoomType::Elite && type != RoomType::NONE;
+}
+
+void validate_room_entry(const RoomScenePayload& payload)
+{
+    if (payload.boundary_entry)
+    {
+        const auto& entry = *payload.boundary_entry;
+        const bool valid_motion = finite(entry.motion.direction) && finite(entry.motion.velocity)
+            && finite(entry.motion.render_offset);
+        const bool valid_camera = finite(entry.camera_offset) && std::isfinite(entry.camera_zoom)
+            && entry.camera_zoom >= elysia::camera::Camera::kMinZoom
+            && entry.camera_zoom <= elysia::camera::Camera::kMaxZoom;
+        if (!payload.from_room || !payload.room_id || !finite(entry.seam_offset)
+            || !valid_motion || !valid_camera || game::corridor_normal(entry.direction).is_zero())
+            throw std::invalid_argument("Invalid boundary entry state");
+
+        const auto& destination = require_boundary_destination(
+            *payload.from_room, game::opposite_direction(entry.direction));
+        if (destination.id != *payload.room_id)
+            throw std::invalid_argument("Boundary entry requires reciprocal fixed-room exits");
+    }
+
+    if (!payload.room_id)
+    {
+        if (payload.from_room)
+            throw std::invalid_argument("Dungeon room entry requires a destination");
+        return;
+    }
+
+    const auto& flow = *GameFlowManager::instance();
+    const auto current_room = flow.get_current_room_id();
+    const auto destination = *payload.room_id;
+    if (payload.from_room)
+    {
+        if (*payload.from_room != current_room || !flow.can_enter_room(destination))
+            throw std::invalid_argument("Invalid dungeon room entry");
+        return;
+    }
+
+    const auto* room = flow.find_room(destination);
+    if (!room || room->type != RoomType::Start || room->id != current_room)
+        throw std::invalid_argument("Invalid dungeon room entry");
+}
+
+elysia::scene::SceneRoute make_boundary_room_route(
+    RoomID from, RoomDirection exit, const CharacterContext& character, RoomBoundaryEntry entry)
+{
+    const auto& destination = require_boundary_destination(from, exit);
+    auto payload = make_room_payload(destination, character, from);
+    entry.direction = game::opposite_direction(exit);
+    payload.boundary_entry = entry;
+    return {
+        .target = FixedRoom,
+        .payload = std::move(payload),
+        .held_input_on_enter = elysia::scene::HeldInputOnEnter::Preserve,
+    };
+}
+
+elysia::scene::SceneRoute make_run_room_route(
+    RoomID room_id, const CharacterContext& character, std::optional<RoomID> from_room)
+{
+    const auto* room = GameFlowManager::instance()->find_room(room_id);
+    if (!room)
+        throw std::invalid_argument("Unknown dungeon room");
+
+    const bool combat = room->type == RoomType::Combat || room->type == RoomType::Elite;
+    return {.target = combat ? CombatRoom : FixedRoom,
+            .payload = make_room_payload(*room, character, from_room)};
 }

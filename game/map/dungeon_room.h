@@ -22,6 +22,7 @@ public:
 
     [[nodiscard]] elysia::core::Vector2 tile_render_size() const noexcept;
     [[nodiscard]] const TileMap &tile_map() const noexcept;
+    [[nodiscard]] std::vector<game::RoomCorridorLayout> corridors() const;
 
     [[nodiscard]] elysia::core::Vector2 world_origin() const noexcept override;
     [[nodiscard]] elysia::core::Vector2 tile_size() const noexcept override;

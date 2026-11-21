@@ -77,6 +77,41 @@ CharacterContext PlayerCharacter::capture_context() const
     return {_character_id, health(), max_health(), move_speed()};
 }
 
+PlayerMotionState PlayerCharacter::capture_motion() const
+{
+    return {move_direction(), velocity(), render_rect().center() - center(), facing() == Facing::Left};
+}
+
+void PlayerCharacter::restore_motion(const PlayerMotionState& motion)
+{
+    set_move_direction(motion.direction);
+    set_facing(motion.facing_left ? Facing::Left : Facing::Right);
+    set_velocity(motion.velocity);
+    _entry_render_offset = motion.render_offset;
+}
+
+elysia::core::Rect PlayerCharacter::blocking_bounds() const
+{
+    auto bounds = std::get<elysia::physics::BoxShape>(collider_definitions().front().shape).local_bounds();
+    bounds.set_position(bounds.position() + position());
+    return bounds;
+}
+
+elysia::core::Rect PlayerCharacter::render_rect() const noexcept
+{
+    if (!_entry_render_offset)
+        return Character::render_rect();
+    auto bounds = world_rect();
+    bounds.set_position(bounds.position() + *_entry_render_offset);
+    return bounds;
+}
+
+void PlayerCharacter::fixed_update(double delta)
+{
+    _entry_render_offset.reset();
+    Character::fixed_update(delta);
+}
+
 std::vector<PlayerCharacter::FireRequest> PlayerCharacter::take_fire_requests()
 {
     return std::exchange(_fire_requests, {});

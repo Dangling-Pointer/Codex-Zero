@@ -2,6 +2,7 @@
 
 #include "tile_data.h"
 #include "tile_map.h"
+#include "room_corridor_layout.h"
 
 #include "../../engine/core/geometry/rect.h"
 #include "engine/tools/random_generator.h"
@@ -22,6 +23,7 @@ public:
 
     void generateRoom();
     void clearGrid();
+    [[nodiscard]] const std::vector<game::RoomCorridorLayout>& corridors() const noexcept { return _corridors; }
 
 private:
     int random_value(int min_value, int max_value);
@@ -29,6 +31,8 @@ private:
 
     elysia::core::Rect buildBaseRoom();
     elysia::core::Rect buildSubRoom(elysia::core::Rect &base, Side side = Side::None);
+    void validateCorridors() const;
+    void buildCorridors(const elysia::core::Rect& base);
 
     void addRecToGrid(elysia::core::Rect &rec);
     void classifyRecs();
@@ -43,4 +47,5 @@ private:
 
     MapConfig config;
     elysia::tools::RandomGenerator _random;
+    std::vector<game::RoomCorridorLayout> _corridors;
 };

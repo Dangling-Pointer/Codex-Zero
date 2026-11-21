@@ -75,6 +75,25 @@ const Room* GameFlowManager::find_room(RoomID room_id) const noexcept
     return position ? _floor.room_at(*position) : nullptr;
 }
 
+const Room* GameFlowManager::connected_room(RoomID from, RoomDirection direction) const noexcept
+{
+    const auto position = _floor.find_position(from);
+    if (!position)
+        return nullptr;
+
+    std::size_t index;
+    switch (direction)
+    {
+    case RoomDirection::Up: index = 0; break;
+    case RoomDirection::Right: index = 1; break;
+    case RoomDirection::Down: index = 2; break;
+    case RoomDirection::Left: index = 3; break;
+    default: return nullptr;
+    }
+    const auto neighbor = _floor.neighbors(*position)[index];
+    return neighbor ? _floor.room_at(*neighbor) : nullptr;
+}
+
 bool GameFlowManager::can_enter_room(RoomID room_id) const noexcept
 {
     if (room_id == _floor.current_room_id)

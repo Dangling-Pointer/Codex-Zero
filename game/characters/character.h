@@ -44,6 +44,8 @@ protected:
     void restore_state(float health, float move_speed);
     virtual void on_death() noexcept {}
     void set_move_direction(elysia::core::Vector2 direction) noexcept;
+    [[nodiscard]] elysia::core::Vector2 move_direction() const noexcept { return _move_direction; }
+    void set_facing(Facing facing) noexcept { _facing = facing; }
 
 private:
     elysia::gameplay::collision::ActorId _actor_id =

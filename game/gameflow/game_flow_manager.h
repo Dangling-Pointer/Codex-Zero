@@ -16,6 +16,7 @@ public:
 
     [[nodiscard]] const Floor& current_floor() const noexcept;
     [[nodiscard]] const Room* find_room(RoomID room_id) const noexcept;
+    [[nodiscard]] const Room* connected_room(RoomID from, RoomDirection direction) const noexcept;
     [[nodiscard]] bool can_enter_room(RoomID room_id) const noexcept;
     [[nodiscard]] bool try_enter_room(RoomID room_id) noexcept;
     [[nodiscard]] std::uint64_t room_seed(RoomID room_id) const noexcept;

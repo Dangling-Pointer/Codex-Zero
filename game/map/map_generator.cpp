@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 #include <utility>
 
 int MapGenerator::random_value(int min_value, int max_value)
@@ -28,6 +29,7 @@ MapGenerator::MapGenerator(const elysia::core::Vector2 gridDimensions, MapConfig
     config.numSubRooms = std::max(0, config.numSubRooms);
     config.minGap = std::max(0, config.minGap);
     this->config = config;
+    validateCorridors();
     initGrid();
 }
 
@@ -47,7 +49,45 @@ void MapGenerator::generateRoom()
         addRecToGrid(subRoom);
     }
 
+    buildCorridors(base);
     classifyRecs();
+}
+
+void MapGenerator::validateCorridors() const
+{
+    const auto& corridors = config.corridors;
+    if (corridors.directions == RoomDirection::None)
+        return;
+
+    const auto directions = std::to_underlying(corridors.directions);
+    if ((directions & ~std::to_underlying(RoomDirection::All)) != 0)
+        throw std::invalid_argument("Room corridors contain an unknown direction");
+    if (config.numSubRooms != 0)
+        throw std::invalid_argument("Room corridors currently require a fixed room without subrooms");
+    if (corridors.width < 1 || corridors.vertical_length < 1 || corridors.horizontal_length < 1)
+        throw std::invalid_argument("Room corridor width and both directional lengths must be positive");
+
+    const auto room_size = config.baseRoomSize;
+    if (!std::isfinite(room_size.x) || !std::isfinite(room_size.y)
+        || std::floor(room_size.x) != room_size.x || std::floor(room_size.y) != room_size.y)
+        throw std::invalid_argument("A fixed room with corridors must use whole tile dimensions");
+    if (corridors.width > room_size.x - 2 || corridors.width > room_size.y - 2)
+        throw std::invalid_argument("Room is too small for the corridor and its side walls");
+
+    const auto padding = (_gridDimensions - room_size) * 0.5f;
+    if (padding.x < corridors.horizontal_length || padding.y < corridors.vertical_length
+        || std::floor(padding.x) != padding.x || std::floor(padding.y) != padding.y)
+        throw std::invalid_argument("Room corridors require symmetric whole tile padding on all four sides");
+}
+
+void MapGenerator::buildCorridors(const elysia::core::Rect& base)
+{
+    _corridors = game::make_room_corridors(base, config.corridors);
+    for (const auto& corridor : _corridors)
+    {
+        auto footprint = corridor.footprint;
+        addRecToGrid(footprint);
+    }
 }
 
 void MapGenerator::clearGrid()
