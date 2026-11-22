@@ -60,6 +60,7 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
     _config = incoming->room;
     _room_id = incoming->room_id;
     _from_room = incoming->from_room;
+    _corridor = incoming->corridor;
     const auto* room = run_room();
     _start_gate_delay = room && room->type == RoomType::Start && !_from_room ? 1.0 : 0.0;
 
@@ -76,11 +77,12 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
             game::restore_boundary_entry(*incoming->boundary_entry, _room.corridors,
                                          *_room.collision_world, *_player);
         create_room_content();
-        create_corridor_gates();
+        if (should_create_gates())
+            create_corridor_gates();
 
         game::initialize_room_camera(camera_runtime(), *_player, incoming->boundary_entry);
 
-        if (_room_id)
+        if (_room_id || _corridor)
         {
             constexpr float size = 220, margin = 18;
             const float right = static_cast<float>(runtime_context().logical_width()) - margin;
@@ -170,6 +172,7 @@ void RoomScene::clear_room() noexcept
     _config = {};
     _room_id.reset();
     _from_room.reset();
+    _corridor.reset();
     resume();
 }
 
@@ -179,7 +182,8 @@ void RoomScene::on_before_update(double delta)
     if (_from_room)
     {
         auto& flow = *GameFlowManager::instance();
-        if (flow.get_current_room_id() != *_from_room || !flow.try_enter_room(*_room_id))
+        const bool returning = _corridor && _room_id == _corridor->from;
+        if (flow.get_current_room_id() != *_from_room || (!returning && !flow.try_enter_room(*_room_id)))
             throw std::logic_error("Dungeon room entry is no longer valid");
         _from_room.reset();
     }
@@ -234,17 +238,26 @@ void RoomScene::on_after_update(double)
 
 void RoomScene::update_minimap()
 {
-    if (_minimap && !_minimap->is_destroyed() && _room_id && _player && !_player->is_destroyed())
+    if (!_minimap || _minimap->is_destroyed() || !_player || _player->is_destroyed())
+        return;
+    if (_room_id)
         _minimap->set_player_location(*_room_id, _player->render_rect().center(), _room.corridors);
+    else if (_corridor)
+    {
+        const auto layout = game::make_corridor_layout(GameFlowManager::instance()->current_floor(), *_corridor);
+        const float progress = layout.progress(_player->render_rect().center(),
+            _room.collision_world->world_origin(), _room.collision_world->tile_size());
+        _minimap->set_corridor_location(*_corridor, progress);
+    }
 }
 
 bool RoomScene::try_leave_through_boundary()
 {
-    if (!_room_id)
-        return false;
-
-    const auto route = game::find_boundary_route(
-        *_room_id, _room.corridors, _previous_player_center, *_player, camera());
+    std::optional<elysia::scene::SceneRoute> route;
+    if (_room_id)
+        route = game::find_boundary_route(*_room_id, _room.corridors, _previous_player_center, *_player, camera());
+    else if (_corridor)
+        route = game::find_corridor_exit_route(*_corridor, _room.corridors, _previous_player_center, *_player, camera());
     if (!route)
         return false;
 

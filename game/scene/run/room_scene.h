@@ -43,9 +43,11 @@ protected:
 
     virtual void create_room_content() {}
     [[nodiscard]] virtual bool should_create_portal() const noexcept { return true; }
+    [[nodiscard]] virtual bool should_create_gates() const noexcept { return true; }
     [[nodiscard]] virtual bool can_leave_room() const { return true; }
 
     [[nodiscard]] const Room* run_room() const;
+    [[nodiscard]] const std::optional<CorridorTraversal>& corridor_traversal() const noexcept { return _corridor; }
 
     [[nodiscard]] const elysia::core::GameObject* room_map() const noexcept {return _room.map;}
 
@@ -71,6 +73,7 @@ private:
 
     std::optional<RoomID> _room_id;
     std::optional<RoomID> _from_room;
+    std::optional<CorridorTraversal> _corridor;
 
     elysia::gameplay::ControllerHandle _player_controller;
     PlayerCharacter* _player = nullptr;

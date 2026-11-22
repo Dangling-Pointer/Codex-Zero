@@ -83,12 +83,49 @@ void validate_room_entry(const RoomScenePayload& payload)
         const bool valid_camera = finite(entry.camera_offset) && std::isfinite(entry.camera_zoom)
             && entry.camera_zoom >= elysia::camera::Camera::kMinZoom
             && entry.camera_zoom <= elysia::camera::Camera::kMaxZoom;
-        if (!payload.from_room || !payload.room_id || !finite(entry.seam_offset)
-            || !valid_motion || !valid_camera || game::corridor_normal(entry.direction).is_zero())
+        if (!finite(entry.seam_offset) || !valid_motion || !valid_camera
+            || game::corridor_normal(entry.direction).is_zero())
             throw std::invalid_argument("Invalid boundary entry state");
+    }
+
+    if (payload.corridor)
+    {
+        const auto& traversal = *payload.corridor;
+        const auto& destination = require_boundary_destination(traversal.from, traversal.direction);
+        const auto& floor = GameFlowManager::instance()->current_floor();
+        if (destination.id != traversal.to || game::connection_gap(floor, traversal.from, traversal.to) < 1
+            || !payload.boundary_entry)
+            throw std::invalid_argument("Invalid corridor traversal");
+
+        if (!payload.room_id)
+        {
+            const auto layout = game::make_corridor_layout(floor, traversal);
+            const auto& map = payload.room.map_config;
+            if (payload.from_room || payload.boundary_entry->direction != game::opposite_direction(traversal.direction)
+                || payload.room.grid_size != layout.grid_size || map.baseRoomSize != layout.grid_size
+                || map.numSubRooms != 0 || map.corridors.directions != RoomDirection::None)
+                throw std::invalid_argument("Invalid corridor scene entry");
+        }
+        else
+        {
+            const bool returning = *payload.room_id == traversal.from;
+            const auto entrance = returning ? traversal.direction : game::opposite_direction(traversal.direction);
+            if ((!returning && *payload.room_id != traversal.to) || payload.from_room != traversal.from
+                || payload.boundary_entry->direction != entrance)
+                throw std::invalid_argument("Corridor exit does not match its room entrance");
+            if (!returning && !GameFlowManager::instance()->can_enter_room(traversal.to))
+                throw std::invalid_argument("Corridor destination is no longer reachable");
+        }
+        return;
+    }
+
+    if (payload.boundary_entry)
+    {
+        if (!payload.from_room || !payload.room_id)
+            throw std::invalid_argument("Boundary room entry requires source and destination IDs");
 
         const auto& destination = require_boundary_destination(
-            *payload.from_room, game::opposite_direction(entry.direction));
+            *payload.from_room, game::opposite_direction(payload.boundary_entry->direction));
         if (destination.id != *payload.room_id)
             throw std::invalid_argument("Boundary entry requires reciprocal fixed-room exits");
     }
@@ -119,14 +156,50 @@ elysia::scene::SceneRoute make_boundary_room_route(
     RoomID from, RoomDirection exit, const CharacterContext& character, RoomBoundaryEntry entry)
 {
     const auto& destination = require_boundary_destination(from, exit);
-    auto payload = make_room_payload(destination, character, from);
     entry.direction = game::opposite_direction(exit);
+    const auto& floor = GameFlowManager::instance()->current_floor();
+    if (game::connection_gap(floor, from, destination.id) > 0)
+    {
+        const CorridorTraversal traversal{from, destination.id, exit};
+        const auto layout = game::make_corridor_layout(floor, traversal);
+        RoomScenePayload payload{.character = character};
+        payload.room.grid_size = layout.grid_size;
+        payload.room.map_config.baseRoomSize = layout.grid_size;
+        payload.room.map_config.numSubRooms = 0;
+        payload.room.map_config.seed = 0;
+        payload.boundary_entry = entry;
+        payload.corridor = traversal;
+        return {.target = Corridor, .payload = std::move(payload),
+                .held_input_on_enter = elysia::scene::HeldInputOnEnter::Preserve};
+    }
+
+    auto payload = make_room_payload(destination, character, from);
     payload.boundary_entry = entry;
     return {
         .target = FixedRoom,
         .payload = std::move(payload),
         .held_input_on_enter = elysia::scene::HeldInputOnEnter::Preserve,
     };
+}
+
+elysia::scene::SceneRoute make_corridor_room_route(
+    const CorridorTraversal& traversal, RoomDirection exit,
+    const CharacterContext& character, RoomBoundaryEntry entry)
+{
+    const auto& destination = require_boundary_destination(traversal.from, traversal.direction);
+    const auto& floor = GameFlowManager::instance()->current_floor();
+    if (destination.id != traversal.to || game::connection_gap(floor, traversal.from, traversal.to) < 1)
+        throw std::invalid_argument("Corridor no longer connects its original endpoints");
+    const bool returning = exit == game::opposite_direction(traversal.direction);
+    if (!returning && exit != traversal.direction)
+        throw std::invalid_argument("Corridor exit must lead to one of its two rooms");
+    const auto* room = GameFlowManager::instance()->find_room(returning ? traversal.from : traversal.to);
+    auto payload = make_room_payload(*room, character, traversal.from);
+    entry.direction = game::opposite_direction(exit);
+    payload.boundary_entry = entry;
+    payload.corridor = traversal;
+    return {.target = FixedRoom, .payload = std::move(payload),
+            .held_input_on_enter = elysia::scene::HeldInputOnEnter::Preserve};
 }
 
 elysia::scene::SceneRoute make_run_room_route(

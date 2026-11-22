@@ -61,23 +61,32 @@ void layout_and_mapping()
     check(hud.input_capture() == elysia::input::InputCapture::None, "HUD never captures gameplay input");
 
     const game::RoomCorridorLayout exit{RoomDirection::Right, {100, 0, 200, 70}, {100, 10, 200, 50}};
+    const float room_part = game::room_edge_fraction(2, RoomDirection::Right);
     hud.set_player_location(0, {100, 35}, {&exit, 1});
     check(marker(hud).nearly_equals(start), "at the room mouth the marker remains on its room");
     hud.set_player_location(0, {150, 35}, {&exit, 1});
-    check(marker(hud).nearly_equals(room_center(hud, 0) + (right - start) * 0.25f),
-          "halfway to the seam pans the map by a quarter edge");
+    check(marker(hud).nearly_equals(room_center(hud, 0) + (right - start) * (room_part * 0.5f)),
+          "room corridor maps to its physical share of the edge");
     hud.set_player_location(0, exit.seam_center(), {&exit, 1});
     const auto midpoint = marker(hud);
     const auto seam_start = room_center(hud, 0);
-    check(midpoint.nearly_equals((seam_start + room_center(hud, 1)) * 0.5f),
-          "source seam centers the edge midpoint");
+    check(midpoint.nearly_equals(seam_start + (right - start) * room_part),
+          "source seam leaves space for the added corridor");
+    const CorridorTraversal traversal{0, 1, RoomDirection::Right};
+    hud.set_corridor_location(traversal, 0);
+    check(room_center(hud, 0).nearly_equals(seam_start), "room-to-corridor HUD projection stays continuous");
+    hud.set_corridor_location(traversal, 0.5f);
+    check(marker(hud).nearly_equals((room_center(hud, 0) + room_center(hud, 1)) * 0.5f),
+          "half the corridor centers the original edge midpoint");
+    hud.set_corridor_location(traversal, 1);
+    const auto corridor_end = room_center(hud, 0);
 
     const game::RoomCorridorLayout entry{RoomDirection::Left, {-90, -20, 200, 70}, {-90, -10, 200, 50}};
     hud.set_player_location(1, entry.seam_center(), {&entry, 1});
     check(marker(hud).nearly_equals(midpoint), "target's translated entrance continues at the same HUD midpoint");
-    check(room_center(hud, 0).nearly_equals(seam_start), "room and line positions stay continuous across the seam");
+    check(room_center(hud, 0).nearly_equals(corridor_end, 0.001f), "corridor-to-room HUD projection stays continuous");
     hud.set_player_location(1, entry.seam_center() + Vector2{50, 0}, {&entry, 1});
-    check(marker(hud).nearly_equals(room_center(hud, 0) + (right - start) * 0.75f),
+    check(marker(hud).nearly_equals(room_center(hud, 0) + (right - start) * (1 - room_part * 0.5f), 0.001f),
           "incoming corridor pans the map toward the target room");
     hud.set_player_location(0, {1000, 1000}, {&exit, 1});
     check(marker(hud).nearly_equals(start), "movement inside a room does not move its HUD dot");

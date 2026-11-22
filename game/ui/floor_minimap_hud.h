@@ -3,6 +3,7 @@
 #include "engine/ui/core/ui_element.h"
 #include "game/gameflow/dungeon_graph_types.h"
 #include "game/map/room_corridor_layout.h"
+#include "game/map/corridor_layout.h"
 
 #include <span>
 
@@ -14,6 +15,7 @@ public:
 
     void set_player_location(RoomID room, elysia::core::Vector2 world_center,
                              std::span<const game::RoomCorridorLayout> corridors);
+    void set_corridor_location(const CorridorTraversal& traversal, float progress);
     void submit_ui_render_commands(std::vector<elysia::core::UiRenderCommand>& commands) const override;
 
 private:

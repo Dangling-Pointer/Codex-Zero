@@ -72,11 +72,34 @@ void FloorMinimapHud::set_player_location(
         const float distance = offset.x * normal.x + offset.y * normal.y;
         const float progress = std::clamp(distance / half_length, 0.0f, 1.0f);
 
-        // Each scene represents its own half of the edge; both seams map to the same midpoint.
+        const auto* destination = _floor.room_at(*neighbors[index]);
+        const int gap = game::connection_gap(_floor, room, destination->id);
+        const float fraction = game::room_edge_fraction(gap, corridor.direction);
         const auto neighbor = grid_point(*neighbors[index]);
-        _player_grid = grid_point(*position) + (neighbor - grid_point(*position)) * (progress * 0.5f);
+        _player_grid = grid_point(*position) + (neighbor - grid_point(*position)) * (progress * fraction);
         return;
     }
+}
+
+void FloorMinimapHud::set_corridor_location(const CorridorTraversal& traversal, float progress)
+{
+    _current_room.reset();
+    _player_grid.reset();
+    const auto from = _floor.find_position(traversal.from);
+    const auto to = _floor.find_position(traversal.to);
+    const auto normal = game::corridor_normal(traversal.direction);
+    if (!from || !to || normal.is_zero())
+        return;
+    const std::size_t index = static_cast<std::size_t>(
+        std::ranges::find(directions, traversal.direction) - directions.begin());
+    if (_floor.neighbors(*from)[index] != to)
+        return;
+    const int gap = game::connection_gap(_floor, traversal.from, traversal.to);
+    if (gap < 1)
+        return;
+    const float room_part = game::room_edge_fraction(gap, traversal.direction);
+    const float fraction = room_part + std::clamp(progress, 0.0f, 1.0f) * (1 - room_part * 2);
+    _player_grid = grid_point(*from) + (grid_point(*to) - grid_point(*from)) * fraction;
 }
 
 void FloorMinimapHud::submit_ui_render_commands(std::vector<elysia::core::UiRenderCommand>& commands) const

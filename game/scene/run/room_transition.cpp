@@ -10,6 +10,18 @@
 
 namespace game
 {
+namespace
+{
+RoomBoundaryEntry capture_entry(const RoomCorridorLayout& exit, const PlayerCharacter& player,
+                                 const elysia::camera::Camera& camera)
+{
+    return {.seam_offset = player.center() - exit.seam_center(),
+            .motion = player.capture_motion(),
+            .camera_offset = camera.center() - player.render_rect().center(),
+            .camera_zoom = camera.zoom()};
+}
+}
+
 std::optional<elysia::scene::SceneRoute> find_boundary_route(
     RoomID from, std::span<const RoomCorridorLayout> corridors,
     elysia::core::Vector2 previous_center, const PlayerCharacter& player,
@@ -24,14 +36,21 @@ std::optional<elysia::scene::SceneRoute> find_boundary_route(
         if (!corridor.crossed_outward(previous_center, player.center(), player.blocking_bounds()))
             continue;
 
-        const RoomBoundaryEntry entry{
-            .seam_offset = player.center() - corridor.seam_center(),
-            .motion = player.capture_motion(),
-            .camera_offset = camera.center() - player.render_rect().center(),
-            .camera_zoom = camera.zoom(),
-        };
+        const auto entry = capture_entry(corridor, player, camera);
         return make_boundary_room_route(from, corridor.direction, player.capture_context(), entry);
     }
+    return std::nullopt;
+}
+
+std::optional<elysia::scene::SceneRoute> find_corridor_exit_route(
+    const CorridorTraversal& traversal, std::span<const RoomCorridorLayout> exits,
+    elysia::core::Vector2 previous_center, const PlayerCharacter& player,
+    const elysia::camera::Camera& camera)
+{
+    for (const auto& exit : exits)
+        if (exit.crossed_outward(previous_center, player.center(), player.blocking_bounds()))
+            return make_corridor_room_route(traversal, exit.direction, player.capture_context(),
+                                             capture_entry(exit, player, camera));
     return std::nullopt;
 }
 

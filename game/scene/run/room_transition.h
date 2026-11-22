@@ -18,6 +18,11 @@ namespace game
     elysia::core::Vector2 previous_center, const PlayerCharacter& player,
     const elysia::camera::Camera& camera);
 
+[[nodiscard]] std::optional<elysia::scene::SceneRoute> find_corridor_exit_route(
+    const CorridorTraversal& traversal, std::span<const RoomCorridorLayout> exits,
+    elysia::core::Vector2 previous_center, const PlayerCharacter& player,
+    const elysia::camera::Camera& camera);
+
 // Called after the destination player has been registered with its physics world.
 void restore_boundary_entry(const RoomBoundaryEntry& entry,
                             std::span<const RoomCorridorLayout> corridors,

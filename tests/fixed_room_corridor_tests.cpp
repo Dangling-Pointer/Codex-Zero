@@ -1,11 +1,14 @@
 #include "scene_harness.h"
 #include "game/scene/run/fixed_room_scene.h"
+#include "game/scene/run/corridor_scene.h"
 #include "game/scene/scene_keys.h"
 #include "game/gameflow/game_flow_manager.h"
 #include "game/map/dungeon_room.h"
 #include "game/map/room_placement.h"
 #include "game/characters/character_manager.h"
 #include "game/characters/player_character.h"
+#include "game/characters/enemy.h"
+#include "game/combat/projectiles/bullet.h"
 #include "game/objcets/portal.h"
 #include "game/objcets/gate.h"
 #include "game/ui/floor_minimap_hud.h"
@@ -29,6 +32,17 @@ void check(bool condition, const char* message)
 bool near(Vector2 first, Vector2 second, float tolerance = 0.15f)
 {
     return first.distance_squared_to(second) < tolerance * tolerance;
+}
+
+std::vector<Vector2> hud_rooms(const FloorMinimapHud& hud)
+{
+    std::vector<elysia::core::UiRenderCommand> commands;
+    hud.submit_ui_render_commands(commands);
+    std::vector<Vector2> rooms;
+    for (const auto& command : commands)
+        if (command.type == elysia::core::UiRenderCommandType::FillRoundedRect && command.corner_radius == 3)
+            rooms.push_back(command.screen_rect.center());
+    return rooms;
 }
 
 game::RoomCorridorLayout corridor(const DungeonRoom& map, RoomDirection direction)
@@ -113,9 +127,10 @@ struct BoundaryObservation
     PlayerMotionState motion;
     Vector2 camera_offset;
     float zoom = 2;
+    std::vector<Vector2> hud_positions;
 };
 
-class ObservedBoundaryRoom : public FixedRoomScene
+template<class Base> class ObservedBoundaryRoom : public Base
 {
 public:
     explicit ObservedBoundaryRoom(BoundaryObservation& observation) : _observation(observation)
@@ -125,12 +140,14 @@ public:
     void on_after_update(double delta) override
     {
         RoomScene::on_after_update(delta);
-        if (player())
+        if (this->player())
         {
-            _observation.center = player()->center();
-            _observation.motion = player()->capture_motion();
-            _observation.camera_offset = camera().center() - player()->render_rect().center();
-            _observation.zoom = camera().zoom();
+            _observation.center = this->player()->center();
+            _observation.motion = this->player()->capture_motion();
+            _observation.camera_offset = this->camera().center() - this->player()->render_rect().center();
+            _observation.zoom = this->camera().zoom();
+            if (_observation.hud)
+                _observation.hud_positions = hud_rooms(*_observation.hud);
         }
     }
 
@@ -158,8 +175,9 @@ protected:
 
     RoomBuildResult build_room(const RoomBuildConfig& config) override
     {
+        _observation.scene = this;
         ++_observation.builds;
-        return FixedRoomScene::build_room(config);
+        return Base::build_room(config);
     }
 
 private:
@@ -180,7 +198,8 @@ public:
         manager.initialize(_context);
         auto* controllers = elysia::gameplay::ControllerService::instance();
         if (!controllers->session_active()) check(controllers->begin_session().has_value(), "start controller session");
-        manager.register_game_scene<ObservedBoundaryRoom>(FixedRoom, std::ref(observation));
+        manager.register_game_scene<ObservedBoundaryRoom<FixedRoomScene>>(FixedRoom, std::ref(observation));
+        manager.register_game_scene<ObservedBoundaryRoom<CorridorScene>>(Corridor, std::ref(observation));
         manager.register_game_scene<test::EmptyScene>(MainMenu);
         manager.register_game_scene<test::EmptyScene>(FloorMap);
         auto& flow = *GameFlowManager::instance();
@@ -196,7 +215,8 @@ public:
     {
         manager.on_update(delta);
         check(manager.state() == elysia::scene::SceneManagerState::Running, "boundary scene stays running");
-        check(manager.current_scene_key() == FixedRoom, "boundary switch stays in fixed rooms");
+        check(manager.current_scene_key() == FixedRoom || manager.current_scene_key() == Corridor,
+              "physical traversal stays in rooms or their connecting corridors");
     }
 
     void keys(std::initializer_list<Key> held)
@@ -206,7 +226,7 @@ public:
         InputSourceFrame source{.source = InputSourceId::keyboard(), .initial_state = _keyboard};
         RawInputState next;
         for (auto key : held) next.set_pressed(key, true);
-        for (auto key : {Key::KeyW, Key::KeyD, Key::KeyS, Key::KeyA})
+        for (auto key : {Key::KeyW, Key::KeyD, Key::KeyS, Key::KeyA, Key::KeyF})
         {
             if (_keyboard.is_pressed(key) == next.is_pressed(key)) continue;
             input.events.push_back({.control = key,
@@ -226,7 +246,7 @@ public:
         const auto* next = flow.connected_room(from, direction);
         check(next, "source has a real reciprocal connection");
         const RoomID to = next->id;
-        const auto exit = corridor(map(), direction);
+        auto exit = corridor(map(), direction);
         const auto normal = game::corridor_normal(direction);
         const auto tangent = normal.x == 0 ? Vector2{1, 0} : Vector2{0, 1};
         keys({});
@@ -241,7 +261,47 @@ public:
             update(1.0 / 60.0);
         check(observation.builds == builds + 1, "one outward crossing rebuilds the shared scene once");
 
+        int expected_builds = builds + 1;
+        const int gap = game::connection_gap(flow.current_floor(), from, to);
+        if (gap > 0)
+        {
+            check(manager.current_scene_key() == Corridor, "a gap enters the formal corridor scene");
+            const auto target_before = *flow.find_room(to);
+            check(flow.get_current_room_id() == from, "entering a corridor keeps the source room current");
+            check(ELYSIA_OBJECT_QUERY->find_objects<Gate>().empty()
+                && ELYSIA_OBJECT_QUERY->find_objects<Portal>().empty()
+                && ELYSIA_OBJECT_QUERY->find_objects<Enemy>().empty()
+                && player().physics_world()->registered_object_count() == 1,
+                  "formal corridor contains only its map and player");
+            const auto layout = game::make_corridor_layout(flow.current_floor(), {from, to, direction});
+            const auto ends = layout.world_exits(map().world_origin(), map().tile_size());
+            check(near(player().center() - ends.front().seam_center(), observation.center - exit.seam_center()),
+                  "room-to-corridor entry preserves lateral offset and overshoot");
+            check(near(player().velocity(), observation.motion.velocity), "corridor entry preserves velocity");
+            check(near(hud_rooms(*observation.hud).front(), observation.hud_positions.front(), 1.0f),
+                  "room-to-corridor HUD projection is continuous on the entry frame");
+            update(0);
+            for (int frame = 0; frame < 600 && observation.builds == builds + 1; ++frame)
+            {
+                if (diagonal) keys({direction_key(direction), normal.x == 0 ? Key::KeyD : Key::KeyS});
+                else keys({direction_key(direction)});
+                update(1.0 / 60.0);
+                if (manager.current_scene_key() == Corridor)
+                    check(flow.get_current_room_id() == from && flow.find_room(to)->visited == target_before.visited
+                        && flow.find_room(to)->discovered == target_before.discovered,
+                          "corridor movement never commits target exploration early");
+            }
+            ++expected_builds;
+            exit = ends.back();
+            check(observation.builds == expected_builds && manager.current_scene_key() == FixedRoom,
+                  "walking the added distance reaches the target room");
+        }
+        else
+            check(manager.current_scene_key() == FixedRoom, "adjacent rooms still switch directly");
+
         const auto entry = corridor(map(), game::opposite_direction(direction));
+        check(near(hud_rooms(*observation.hud).front(), observation.hud_positions.front(), 1.0f),
+              "room entry preserves HUD projection across direct and corridor transitions");
         check(near(player().center() - entry.seam_center(), observation.center - exit.seam_center()),
               "destination retains lateral offset and overshoot in world axes");
         check(near(player().velocity(), observation.motion.velocity), "velocity survives the first rendered frame");
@@ -274,7 +334,7 @@ public:
         update(1.0 / 60.0);
         const auto moved = player().center() - before;
         check(moved.x * normal.x + moved.y * normal.y > 1, "held movement continues without another key press");
-        check(observation.builds == builds + 1, "inward movement never bounces to the source");
+        check(observation.builds == expected_builds, "inward movement never bounces to the source");
         keys({});
         update(1.0 / 60.0);
         check(player().velocity().is_zero(), "releasing a transferred key stops movement");
@@ -395,6 +455,148 @@ void exact_midpoint_and_reverse()
           "an exact midpoint entry can immediately turn back");
 }
 
+void corridor_layouts()
+{
+    for (int gap = 1; gap <= 4; ++gap)
+        for (const auto direction : {RoomDirection::Up, RoomDirection::Right, RoomDirection::Down, RoomDirection::Left})
+        {
+            Floor floor;
+            const auto normal = game::corridor_normal(direction);
+            const FloorPosition from{normal.x < 0 ? 5 : normal.x > 0 ? 0 : 2,
+                                     normal.y < 0 ? 5 : normal.y > 0 ? 0 : 2};
+            const FloorPosition to{from.x + static_cast<int>(normal.x) * (gap + 1),
+                                   from.y + static_cast<int>(normal.y) * (gap + 1)};
+            floor.rooms[from.y][from.x] = Room{.id = 0, .type = RoomType::Start};
+            floor.rooms[to.y][to.x] = Room{.id = 1, .type = RoomType::End};
+            check(floor.connect(from, to), "connect a cardinal gap fixture");
+            check(game::connection_gap(floor, 0, 1) == gap, "count only empty cells between endpoints");
+            const auto layout = game::make_corridor_layout(floor, {0, 1, direction});
+            bool wrong_direction_rejected = false;
+            try { (void)game::make_corridor_layout(floor, {0, 1, game::opposite_direction(direction)}); }
+            catch (const std::invalid_argument&) { wrong_direction_rejected = true; }
+            check(wrong_direction_rejected, "layout rejects a direction pointing away from its target");
+            const float expected = static_cast<float>(gap == 1 ? 13 : gap == 2 ? 19 : 25);
+            check(layout.source_seam.distance_to(layout.target_seam) == expected,
+                  "added traversal distance is 13/19/25 tiles and caps at three empty cells");
+            MapConfig config;
+            config.baseRoomSize = layout.grid_size;
+            config.numSubRooms = 0;
+            DungeonRoom map(config, layout.grid_size);
+            map.set_position({96, -160});
+            const auto exits = layout.world_exits(map.world_origin(), map.tile_size());
+            check(exits.size() == 2 && exits.front().direction == game::opposite_direction(direction)
+                && exits.back().direction == direction, "corridor exits lead to its original source and target");
+            const auto source = exits.front().seam_center();
+            const auto target = exits.back().seam_center();
+            check(game::walkable_bounds(map, Rect::from_center(source, {32, 32}))
+                && game::walkable_bounds(map, Rect::from_center(target, {32, 32})),
+                  "both transfer seams have walkable buffer space");
+            check(layout.progress(source, map.world_origin(), map.tile_size()) == 0
+                && layout.progress(target, map.world_origin(), map.tile_size()) == 1
+                && std::abs(layout.progress((source + target) * 0.5f, map.world_origin(), map.tile_size()) - 0.5f) < 0.001f,
+                  "corridor progress handles all four directions and nonzero world origins");
+        }
+    check(game::extra_corridor_tiles(0) == 0, "adjacent rooms have no extra corridor length");
+}
+
+RoomDirection travel_to_gap(BoundaryTestRun& run, RoomID parent = std::numeric_limits<RoomID>::max())
+{
+    const auto& flow = *GameFlowManager::instance();
+    const RoomID current = flow.get_current_room_id();
+    for (const auto direction : {RoomDirection::Up, RoomDirection::Right, RoomDirection::Down, RoomDirection::Left})
+    {
+        const auto* next = flow.connected_room(current, direction);
+        if (next && next->id != parent && game::connection_gap(flow.current_floor(), current, next->id) > 0)
+            return direction;
+    }
+    for (const auto direction : {RoomDirection::Up, RoomDirection::Right, RoomDirection::Down, RoomDirection::Left})
+    {
+        const auto* next = flow.connected_room(current, direction);
+        if (!next || next->id == parent) continue;
+        run.cross(direction);
+        const auto found = travel_to_gap(run, current);
+        if (found != RoomDirection::None) return found;
+        run.cross(game::opposite_direction(direction));
+    }
+    return RoomDirection::None;
+}
+
+void corridor_return_and_validation()
+{
+    BoundaryTestRun run;
+    auto& flow = *GameFlowManager::instance();
+    const auto direction = travel_to_gap(run);
+    check(direction != RoomDirection::None, "generated test floor contains a gap connection");
+    const CorridorTraversal traversal{flow.get_current_room_id(), flow.connected_room(flow.get_current_room_id(), direction)->id,
+                                       direction};
+    const Room before = *flow.find_room(traversal.to);
+    auto route = make_boundary_room_route(traversal.from, direction, run.player().capture_context(), {});
+    for (int scenario = 0; scenario < 6; ++scenario)
+    {
+        auto payload = *elysia::scene::try_scene_payload<RoomScenePayload>(route.payload);
+        switch (scenario)
+        {
+        case 0: payload.corridor->to = traversal.from; break;
+        case 1: payload.corridor->direction = game::opposite_direction(direction); break;
+        case 2: payload.room.grid_size.x += 1; break;
+        case 3: payload.room_id = traversal.from; break;
+        case 4: payload.boundary_entry.reset(); break;
+        case 5: payload.corridor->from = traversal.to; break;
+        }
+        bool rejected = false;
+        try { validate_room_entry(payload); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "malformed corridor endpoints, dimensions and handoffs are rejected");
+    }
+
+    for (const float fraction : {0.0f, 0.5f, 0.9f})
+    {
+        route = make_boundary_room_route(traversal.from, direction, run.player().capture_context(), {});
+        run.manager.on_scene_request({elysia::scene::SceneRequestType::Switch, route});
+        run.update(0);
+        check(run.manager.current_scene_key() == Corridor, "gap route enters Corridor");
+        const auto layout = game::make_corridor_layout(flow.current_floor(), traversal);
+        const auto exits = layout.world_exits(run.map().world_origin(), run.map().tile_size());
+        const auto center = exits.front().seam_center()
+            + (exits.back().seam_center() - exits.front().seam_center()) * fraction;
+        check(run.player().physics_world()->teleport_object(run.player().physics_handle(), center - run.player().size() * 0.5f),
+              "position the player at a corridor turn-back point");
+        run.update(0);
+        const int builds = run.observation.builds;
+        for (int frame = 0; frame < 600 && run.observation.builds == builds; ++frame)
+        {
+            run.keys({direction_key(game::opposite_direction(direction)), Key::KeyF});
+            run.update(1.0 / 60.0);
+            check(ELYSIA_OBJECT_QUERY->find_objects<Bullet>().empty(), "holding Fire in a corridor never spawns bullets");
+        }
+        check(run.manager.current_scene_key() == FixedRoom && run.observation.builds == builds + 1,
+              "turning back at the entrance, middle or far end returns to the source room once");
+        check(near(hud_rooms(*run.observation.hud).front(), run.observation.hud_positions.front(), 1.0f),
+              "returning through the corridor entrance preserves the HUD projection");
+        run.keys({});
+        run.update(0);
+        check(flow.get_current_room_id() == traversal.from
+            && flow.find_room(traversal.to)->visited == before.visited
+            && flow.find_room(traversal.to)->discovered == before.discovered,
+              "returning to the current source room does not mark or reveal the target");
+    }
+
+    // An unbuildable destination must not commit the target, even after a successful corridor entry.
+    route = make_boundary_room_route(traversal.from, direction, run.player().capture_context(), {});
+    run.manager.on_scene_request({elysia::scene::SceneRequestType::Switch, route});
+    run.update(0);
+    auto failed = make_corridor_room_route(traversal, direction, run.player().capture_context(), {});
+    auto payload = *elysia::scene::try_scene_payload<RoomScenePayload>(failed.payload);
+    payload.room.grid_size = {2, 2};
+    payload.room.map_config.baseRoomSize = {2, 2};
+    payload.room.map_config.corridors.directions = RoomDirection::None;
+    failed.payload = payload;
+    run.manager.on_scene_request({elysia::scene::SceneRequestType::Switch, failed});
+    run.manager.on_update(0);
+    check(flow.get_current_room_id() == traversal.from && flow.find_room(traversal.to)->visited == before.visited,
+          "failed destination construction leaves corridor progression unchanged");
+}
+
 void boundary_transitions()
 {
     BoundaryTestRun run;
@@ -428,7 +630,7 @@ void boundary_transitions()
         }
     };
     traverse(traverse, std::numeric_limits<RoomID>::max());
-    check(crossed_gap && flow.get_current_room_id() == 0, "real gap links route directly and return to Start");
+    check(crossed_gap && flow.get_current_room_id() == 0, "gap corridors and direct links return to Start");
 
     const auto character = run.player().capture_context();
     bool rejected = false;
@@ -441,8 +643,10 @@ void boundary_transitions()
 void fixed_room_corridor_tests()
 {
     geometry();
+    corridor_layouts();
     start_gate_delay();
     boundary_transitions();
+    corridor_return_and_validation();
     exact_midpoint_and_reverse();
     invalid_entries();
 }

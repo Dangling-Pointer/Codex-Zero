@@ -883,13 +883,6 @@ template<class T> std::vector<T*> objects(elysia::scene::Scene& scene)
     return result;
 }
 
-// Keep geometry and cleanup checks independent of the corridor's automatic reload experiment.
-class CorridorGeometryTestScene : public CorridorScene
-{
-public:
-    void on_before_update(double delta) override { RoomScene::on_before_update(delta); }
-};
-
 void corridor_movement_and_lifecycle()
 {
     const auto character = *CharacterManager::instance()->create_context("default_player");
@@ -897,7 +890,7 @@ void corridor_movement_and_lifecycle()
     const auto* payload = elysia::scene::try_scene_payload<RoomScenePayload>(route.payload);
     check(route.target == Corridor && payload && !payload->room_id && !payload->from_room,
           "corridor route is independent of dungeon room routing");
-    test::SceneHarness<CorridorGeometryTestScene> host(route.payload);
+    test::SceneHarness<CorridorScene> host(route.payload);
     auto& scene = host.scene();
     using Key = elysia::input::RawInputControl;
 
