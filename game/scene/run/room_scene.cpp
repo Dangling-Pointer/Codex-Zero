@@ -8,6 +8,7 @@
 #include "game/combat/projectiles/bullet.h"
 #include "game/gameflow/game_flow_manager.h"
 #include "game/map/room_placement.h"
+#include "game/map/room_service.h"
 #include "game/objcets/portal.h"
 #include "game/objcets/gate.h"
 #include "game/scene/gameplay_setup.h"
@@ -93,6 +94,8 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
         }
 
         _previous_player_center = _player->center();
+        if (!game::RoomService::instance()->bind(*_room_query))
+            throw std::runtime_error("Cannot bind room query service");
         _active = true;
     }
     catch (...)
@@ -115,6 +118,8 @@ void RoomScene::build_room_objects(const CharacterContext& character)
     if (!_room.collision_world)
         throw std::runtime_error("Room build did not provide a tile collision world");
 
+    _room_query.emplace(*_room.map, _room.corridors, _room.corridor_only);
+
     const auto spawn = _room.player_spawn;
     if (!std::isfinite(spawn.x) || !std::isfinite(spawn.y))
         throw std::runtime_error("Room player spawn has non-finite coordinates");
@@ -124,13 +129,13 @@ void RoomScene::build_room_objects(const CharacterContext& character)
         throw std::runtime_error("Cannot bind room tile collision world");
 
     const elysia::core::Rect player_bounds{spawn, game::kPlayerSpawnSize};
-    if (!game::walkable_bounds(collision_world, player_bounds))
+    if (!room_query().is_walkable(player_bounds))
         throw std::runtime_error("Room player spawn must be on walkable ground");
 
     if (should_create_portal())
     {
         const auto portal_bounds = game::central_portal_bounds(*_room.map);
-        if (!game::walkable_bounds(collision_world, portal_bounds))
+        if (!room_query().is_walkable(portal_bounds))
             throw std::runtime_error("Room portal must be on walkable ground");
         if (portal_bounds.intersects(player_bounds))
             throw std::runtime_error("Room player spawn overlaps the portal");
@@ -148,6 +153,11 @@ void RoomScene::build_room_objects(const CharacterContext& character)
 
 void RoomScene::clear_room() noexcept
 {
+    if (_room_query)
+    {
+        (void)game::RoomService::instance()->unbind(*_room_query);
+        _room_query.reset();
+    }
     _active = false;
     _transition_requested = false;
     _start_gate_delay = 0;

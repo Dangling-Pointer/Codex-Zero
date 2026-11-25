@@ -7,6 +7,8 @@
 #include "game/map/room_placement.h"
 #include "game/objcets/portal.h"
 
+#include <stdexcept>
+
 RoomBuildResult CombatScene::build_room(const RoomBuildConfig& config)
 {
     _map = create_and_add_object<DungeonRoom>(config.map_config, config.grid_size);
@@ -34,7 +36,10 @@ void CombatScene::create_room_content()
     for (const auto& spawn : spawns)
     {
         auto enemy = std::make_unique<Enemy>(spawn.position, spawn.definition);
-        enemy->set_position(game::find_room_spawn(*_map, enemy->size(), spawn.position, occupied));
+        const auto position = room_query().find_spawn(enemy->size(), spawn.position, {.occupied = occupied});
+        if (!position)
+            throw std::runtime_error("Room has no free walkable spawn area");
+        enemy->set_position(*position);
         const auto bounds = enemy->world_rect();
         add_object(std::move(enemy));
         occupied.push_back(bounds);

@@ -7,6 +7,8 @@
 #include "room_scene_payload.h"
 #include "game/combat/wand/wand.h"
 #include "game/map/room_corridor_layout.h"
+#include "game/map/dungeon_room.h"
+#include "game/map/room_query.h"
 
 class PlayerCharacter;
 class Portal;
@@ -16,10 +18,11 @@ class Gate;
 // Observers of scene-owned objects; ownership stays with Scene.
 struct RoomBuildResult
 {
-    elysia::core::GameObject* map = nullptr;
+    DungeonRoom* map = nullptr;
     elysia::physics::ITileCollisionWorld* collision_world = nullptr;
     elysia::core::Vector2 player_spawn;
     std::vector<game::RoomCorridorLayout> corridors;
+    bool corridor_only = false;
 };
 
 class RoomScene : public elysia::gameplay::GameplayScene
@@ -50,6 +53,7 @@ protected:
     [[nodiscard]] const std::optional<CorridorTraversal>& corridor_traversal() const noexcept { return _corridor; }
 
     [[nodiscard]] const elysia::core::GameObject* room_map() const noexcept {return _room.map;}
+    [[nodiscard]] const game::RoomQuery& room_query() const noexcept { return *_room_query; }
 
     [[nodiscard]] PlayerCharacter* player() const noexcept { return _player; }
     [[nodiscard]] Portal* portal() const noexcept { return _portal; }
@@ -83,6 +87,7 @@ private:
     std::vector<Gate*> _gates; // Scene-owned observers, like the player and portal.
 
     RoomBuildResult _room;
+    std::optional<game::RoomQuery> _room_query;
     RoomBuildConfig _config;
 
     bool _active = false;

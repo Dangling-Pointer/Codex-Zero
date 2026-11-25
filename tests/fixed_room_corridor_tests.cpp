@@ -1,4 +1,6 @@
 #include "scene_harness.h"
+#include "game/map/room_service.h"
+#include "game/map/room_query.h"
 #include "game/scene/run/fixed_room_scene.h"
 #include "game/scene/run/corridor_scene.h"
 #include "game/scene/scene_keys.h"
@@ -217,6 +219,12 @@ public:
         check(manager.state() == elysia::scene::SceneManagerState::Running, "boundary scene stays running");
         check(manager.current_scene_key() == FixedRoom || manager.current_scene_key() == Corridor,
               "physical traversal stays in rooms or their connecting corridors");
+        const auto* query = game::RoomService::instance()->current();
+        check(query && query->map_bounds() == map().world_rect(),
+              "boundary switches publish a query for the new map");
+        if (manager.current_scene_key() == Corridor)
+            check(query->region_at(player().center()).region == game::RoomRegion::Corridor,
+                  "gap corridor query reports passage even between its two exits");
     }
 
     void keys(std::initializer_list<Key> held)

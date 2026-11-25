@@ -20,13 +20,13 @@ RoomBuildResult CorridorScene::build_room(const RoomBuildConfig& config)
             GameFlowManager::instance()->current_floor(), *corridor_traversal());
         auto exits = layout.world_exits(map->world_origin(), map->tile_size());
         return {map, map, game::find_room_spawn(*map, game::kPlayerSpawnSize, exits.front().seam_center(), {}),
-                std::move(exits)};
+                std::move(exits), true};
     }
     const auto preferred = map->position()
         + elysia::core::Vector2{700, map->size().y * 0.5f};
     const auto spawn = game::find_room_spawn(*map, game::kPlayerSpawnSize, preferred, {});
 
-    return {map, map, spawn};
+    return {map, map, spawn, {}, true};
 }
 
 elysia::scene::SceneRoute make_corridor_test_route(const CharacterContext& character)

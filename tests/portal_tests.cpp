@@ -26,6 +26,7 @@
 void fixed_room_corridor_tests();
 void floor_minimap_tests();
 void gate_tests();
+void room_query_tests();
 
 namespace
 {
@@ -1089,6 +1090,7 @@ int main()
         portal_trigger();
         gate_tests();
         placement();
+        room_query_tests();
         fixed_room_corridor_tests();
         floor_minimap_tests();
         room_portal<CombatScene>(RoomScenePayload{
