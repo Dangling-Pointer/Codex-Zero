@@ -2,8 +2,8 @@
 
 #include "engine/ui/core/ui_element.h"
 #include "game/gameflow/dungeon_graph_types.h"
-#include "game/map/room_corridor_layout.h"
-#include "game/map/corridor_layout.h"
+#include "game/map/corridor/room_corridor_layout.h"
+#include "game/map/corridor/corridor_layout.h"
 
 #include <span>
 

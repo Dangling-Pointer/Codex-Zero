@@ -4,6 +4,7 @@ class DungeonRoom;
 class CombatScene : public RoomScene
 {
 protected:
+    void on_after_update(double delta) override;
     RoomBuildResult build_room(const RoomBuildConfig& config) override;
     void create_room_content() override;
     [[nodiscard]] bool can_leave_room() const override;

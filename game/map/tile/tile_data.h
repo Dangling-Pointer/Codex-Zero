@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../engine/core/geometry/vector2.h"
-#include "map_config.h"
+#include "engine/core/geometry/vector2.h"
+#include "game/map/generation/map_config.h"
 
 enum class TileType
 {

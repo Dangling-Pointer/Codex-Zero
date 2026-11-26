@@ -3,7 +3,7 @@
 #include "game/objcets/portal.h"
 #include "game/scene/run/fixed_room_scene.h"
 #include "game/map/dungeon_room.h"
-#include "game/map/room_placement.h"
+#include "room_test_helpers.h"
 #include "game/characters/character_manager.h"
 #include "game/combat/projectiles/bullet.h"
 #include "game/combat/projectiles/bullet_behavior/behavior_list.h"
@@ -72,33 +72,32 @@ void texture_and_geometry()
     gate.update(Gate::kAnimationDuration * 0.25);
     commands.clear();
     gate.submit_render_commands(commands);
-    check(commands.size() == 2 && commands[0].texture == ELYSIA_RESOURCES->find_texture("gate_down")
-        && commands[1].texture == ELYSIA_RESOURCES->find_texture("gate_up")
-        && commands[1].command_rect == Rect{64, 80, 32, 16}
-        && commands[1].use_src_rect && commands[1].src_rect == Rect{0, 0, 32, 16},
-          "rising sprite translates upward and crops underground pixels without stretching");
-    gate.set_raised(true); // RoomScene repeats the target every update.
+    check(commands.size() == 1 && commands.front().texture == ELYSIA_RESOURCES->find_texture("gate_up")
+        && commands.front().command_rect == Rect{64, 48, 32, 48}
+        && commands.front().use_src_rect && commands.front().src_rect == Rect{64, 0, 32, 48},
+          "quarter rise selects the second spike frame with the base anchored");
+    gate.set_raised(true);
     gate.update(Gate::kAnimationDuration * 0.75);
     commands.clear();
     gate.submit_render_commands(commands);
-    check(commands.size() == 2 && commands[1].command_rect == Rect{64, 32, 32, 64}
-        && commands[1].src_rect == Rect{0, 0, 32, 64}, "repeated commands do not restart a complete rise");
+    check(commands.size() == 1 && commands.front().src_rect == Rect{256, 0, 32, 48},
+          "complete rise reaches the last spike frame");
     const auto& collider = gate.collider_definitions().front();
     check(gate.world_rect() == ground && collider.enabled && collider.filter.category == World
         && std::get<elysia::physics::BoxShape>(collider.shape).local_bounds() == Rect{0, 0, 32, 32},
           "raised collision only occupies the ground tile and belongs to World");
 
     gate.set_raised(false);
-    check(!gate.is_raised() && gate.render_rect() == Rect{64, 32, 32, 64},
+    check(!gate.is_raised() && gate.render_rect() == Rect{64, 48, 32, 48},
           "lowering disables collision immediately without snapping the visual");
     gate.update(Gate::kAnimationDuration * 0.25);
     commands.clear();
     gate.submit_render_commands(commands);
-    check(commands.back().command_rect == Rect{64, 48, 32, 48}, "lowering translates downward at the same speed");
+    check(commands.back().src_rect == Rect{192, 0, 32, 48}, "lowering translates downward at the same speed");
     gate.set_raised(true);
     check(gate.render_rect() == Rect{64, 48, 32, 48}, "reversing preserves the current visual position");
     gate.update(Gate::kAnimationDuration * 0.25);
-    check(gate.render_rect() == Rect{64, 32, 32, 64}, "reverse motion completes from the current progress");
+    check(gate.render_rect() == Rect{64, 48, 32, 48}, "reverse motion completes from the current progress");
     gate.set_raised(false);
     gate.update(Gate::kAnimationDuration * 0.5);
     gate.set_raised(false);
@@ -179,7 +178,7 @@ void animation_pause()
 {
     test::SceneHarness<PhysicsTestScene> host;
     auto* gate = host.scene().create_and_add_object<Gate>(Vector2{64, 64}, true);
-    check(gate->render_rect() == Rect{64, 32, 32, 64}, "a raised constructor starts at the raised visual endpoint");
+    check(gate->render_rect() == Rect{64, 48, 32, 48}, "a raised constructor starts at the raised visual endpoint");
     gate->set_raised(false);
     host.update(Gate::kAnimationDuration * 0.25);
     const auto middle = gate->render_rect();
@@ -248,8 +247,8 @@ void room_gates()
                                            : elysia::scene::SceneReloadMode::Reset);
         }
         const auto gates = objects<Gate>(scene);
-        check(gates.size() == 20 && objects<Portal>(scene).size() == 1,
-              "four five-tile gate rows coexist with the central portal");
+        check(gates.size() == 20 && objects<Portal>(scene).empty(),
+              "four five-tile gate rows need no central portal");
         const auto* map = objects<DungeonRoom>(scene).front();
         for (const auto& corridor : map->corridors())
         {
@@ -257,7 +256,7 @@ void room_gates()
             int count = 0;
             for (const auto* gate : gates)
                 if (strip.contains(gate->world_rect())) ++count;
-            check(count == 5 && game::walkable_bounds(*map, strip),
+            check(count == 5 && test::walkable(*map, strip),
                   "every gate row covers a full walkable mouth at the original room wall");
         }
         check(std::ranges::all_of(gates, &Gate::is_raised), "locked room starts with raised gates");

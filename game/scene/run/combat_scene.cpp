@@ -4,8 +4,7 @@
 #include "game/characters/enemy.h"
 #include "game/enemy_generation/enemy_generator.h"
 #include "game/enemy_generation/enemy_spawn_layout.h"
-#include "game/map/room_placement.h"
-#include "game/objcets/portal.h"
+#include "game/gameflow/game_flow_manager.h"
 
 #include <stdexcept>
 
@@ -13,7 +12,7 @@ RoomBuildResult CombatScene::build_room(const RoomBuildConfig& config)
 {
     _map = create_and_add_object<DungeonRoom>(config.map_config, config.grid_size);
 
-    return {_map, _map, game::player_spawn_near_portal(*_map)};
+    return {.map = _map, .collision_world = _map};
 }
 
 void CombatScene::create_room_content()
@@ -31,12 +30,12 @@ void CombatScene::create_room_content()
     const auto purchases = generator.generate(config);
     const auto spawns = EnemySpawnLayout{}.map(purchases.purchases, _map->center());
 
-    std::vector<elysia::core::Rect> occupied{player()->world_rect(), portal()->world_rect()};
+    std::vector<elysia::core::Rect> occupied{player()->world_rect()};
 
     for (const auto& spawn : spawns)
     {
         auto enemy = std::make_unique<Enemy>(spawn.position, spawn.definition);
-        const auto position = room_query().find_spawn(enemy->size(), spawn.position, {.occupied = occupied});
+        const auto position = room_manager().find_spawn(enemy->size(), spawn.position, {.occupied = occupied});
         if (!position)
             throw std::runtime_error("Room has no free walkable spawn area");
         enemy->set_position(*position);
@@ -62,4 +61,17 @@ bool CombatScene::can_leave_room() const
         });
 
     return !enemies_remaining;
+}
+
+void CombatScene::on_after_update(double delta)
+{
+    const auto* room = run_room();
+    const auto* map = room_map();
+    const auto* character = player();
+    if (!is_paused() && room && !room->cleared && map && !map->is_destroyed()
+        && character && !character->is_destroyed() && character->is_active() && !character->is_dead()
+        && GameFlowManager::instance()->get_current_room_id() == room->id && can_leave_room())
+        GameFlowManager::instance()->mark_current_room_cleared();
+
+    RoomScene::on_after_update(delta);
 }

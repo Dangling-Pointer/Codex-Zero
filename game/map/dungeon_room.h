@@ -1,10 +1,10 @@
 #pragma once
 
-#include "../../engine/core/game_object.h"
-#include "../../engine/physics/tile/tile_collision_world.h"
+#include "engine/core/game_object.h"
+#include "engine/physics/tile/tile_collision_world.h"
 
-#include "map_generator.h"
-#include "tile_map.h"
+#include "game/map/generation/map_generator.h"
+#include "game/map/tile/tile_map.h"
 
 #include <memory>
 

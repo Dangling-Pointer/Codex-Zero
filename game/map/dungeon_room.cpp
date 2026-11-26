@@ -1,8 +1,8 @@
 #include "dungeon_room.h"
 
-#include "../../engine/core/render/render_command.h"
-#include "../../engine/resources/resource_service.h"
-#include "../../engine/tools/logger.h"
+#include "engine/core/render/render_command.h"
+#include "engine/resources/resource_service.h"
+#include "engine/tools/logger.h"
 
 #include <algorithm>
 #include <cmath>

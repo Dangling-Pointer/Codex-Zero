@@ -1,6 +1,6 @@
 #pragma once
 
-#include "map_config.h"
+#include "game/map/generation/map_config.h"
 #include "engine/core/geometry/rect.h"
 
 #include <vector>

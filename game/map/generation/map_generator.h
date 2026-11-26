@@ -1,10 +1,10 @@
 #pragma once
 
-#include "tile_data.h"
-#include "tile_map.h"
-#include "room_corridor_layout.h"
+#include "game/map/tile/tile_data.h"
+#include "game/map/tile/tile_map.h"
+#include "game/map/corridor/room_corridor_layout.h"
 
-#include "../../engine/core/geometry/rect.h"
+#include "engine/core/geometry/rect.h"
 #include "engine/tools/random_generator.h"
 
 enum class Side

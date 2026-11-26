@@ -3,8 +3,8 @@
 #include "game/characters/character_context.h"
 #include "game/characters/player_motion_state.h"
 #include "game/gameflow/dungeon_graph_types.h"
-#include "game/map/map_config.h"
-#include "game/map/corridor_layout.h"
+#include "game/map/generation/map_config.h"
+#include "game/map/corridor/corridor_layout.h"
 #include "engine/scene/routing/scene_route.h"
 
 #include <optional>

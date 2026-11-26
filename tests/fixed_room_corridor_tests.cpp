@@ -1,12 +1,12 @@
 #include "scene_harness.h"
-#include "game/map/room_service.h"
-#include "game/map/room_query.h"
+#include "game/map/runtime/room_service.h"
+#include "room_test_helpers.h"
 #include "game/scene/run/fixed_room_scene.h"
 #include "game/scene/run/corridor_scene.h"
 #include "game/scene/scene_keys.h"
 #include "game/gameflow/game_flow_manager.h"
 #include "game/map/dungeon_room.h"
-#include "game/map/room_placement.h"
+#include "room_test_helpers.h"
 #include "game/characters/character_manager.h"
 #include "game/characters/player_character.h"
 #include "game/characters/enemy.h"
@@ -86,7 +86,7 @@ void geometry()
             const int length = vertical ? config.corridors.vertical_length : config.corridors.horizontal_length;
             check((vertical ? exit.walkable.height() : exit.walkable.width()) == length * 32,
                   "net strip uses the directional length");
-            check(game::walkable_bounds(map, Rect::from_center(exit.seam_center(), {32, 32})),
+            check(test::walkable(map, Rect::from_center(exit.seam_center(), {32, 32})),
                   "world-space midpoint lies on walkable ground with a translated map");
 
             const auto previous = exit.seam_center() - normal * 100;
@@ -219,7 +219,7 @@ public:
         check(manager.state() == elysia::scene::SceneManagerState::Running, "boundary scene stays running");
         check(manager.current_scene_key() == FixedRoom || manager.current_scene_key() == Corridor,
               "physical traversal stays in rooms or their connecting corridors");
-        const auto* query = game::RoomService::instance()->current();
+        const auto* query = game::RoomService::instance();
         check(query && query->map_bounds() == map().world_rect(),
               "boundary switches publish a query for the new map");
         if (manager.current_scene_key() == Corridor)
@@ -359,7 +359,7 @@ void start_gate_delay()
     };
     check(gates_raised(), "Start gates are raised on the first frame");
     for (const auto* gate : ELYSIA_OBJECT_QUERY->find_objects<Gate>())
-        check(gate->render_rect().height() == 64, "Start gates begin visually raised without an opening animation");
+        check(gate->render_rect().height() == 48, "Start gates begin visually raised without an opening animation");
 
     const auto strip = corridor(run.map(), RoomDirection::Right).gate_strip(run.map().tile_size());
     const Vector2 start_center{strip.left() - 16, strip.center().y};
@@ -387,7 +387,7 @@ void start_gate_delay()
     {
         std::vector<elysia::core::RenderCommand> commands;
         gate->submit_render_commands(commands);
-        check(commands.size() == 2 && commands.back().command_rect.height() == 32,
+        check(commands.size() == 1 && commands.back().src_rect == elysia::core::Rect{128, 0, 32, 48},
               "Start gates are halfway through lowering at this animation frame");
     }
     run.keys({Key::KeyD});
@@ -496,8 +496,8 @@ void corridor_layouts()
                 && exits.back().direction == direction, "corridor exits lead to its original source and target");
             const auto source = exits.front().seam_center();
             const auto target = exits.back().seam_center();
-            check(game::walkable_bounds(map, Rect::from_center(source, {32, 32}))
-                && game::walkable_bounds(map, Rect::from_center(target, {32, 32})),
+            check(test::walkable(map, Rect::from_center(source, {32, 32}))
+                && test::walkable(map, Rect::from_center(target, {32, 32})),
                   "both transfer seams have walkable buffer space");
             check(layout.progress(source, map.world_origin(), map.tile_size()) == 0
                 && layout.progress(target, map.world_origin(), map.tile_size()) == 1

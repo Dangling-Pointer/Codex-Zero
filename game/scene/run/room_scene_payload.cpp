@@ -2,7 +2,7 @@
 
 #include "game/gameflow/game_flow_manager.h"
 #include "game/scene/scene_keys.h"
-#include "game/map/room_corridor_layout.h"
+#include "game/map/corridor/room_corridor_layout.h"
 #include "engine/camera/camera.h"
 
 #include <array>

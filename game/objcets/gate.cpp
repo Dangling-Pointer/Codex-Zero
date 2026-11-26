@@ -50,41 +50,36 @@ void Gate::update(double delta)
                                 : std::max(0.0, _raise_progress - step);
 }
 
-elysia::core::Rect Gate::raised_sprite_rect() const noexcept
+int Gate::animation_frame() const noexcept
 {
-    const auto ground = GameObject::render_rect();
-    // Move the sprite out of the ground, exposing its top pixels without scaling.
-    const float height = static_cast<float>(std::round(kTileSize * 2 * _raise_progress));
-    return {ground.x(), ground.bottom() - height, kTileSize, height};
+    return static_cast<int>(std::round(_raise_progress * 8));
 }
 
 elysia::core::Rect Gate::render_rect() const noexcept
 {
     const auto ground = GameObject::render_rect();
-    const float top = std::min(ground.top(), raised_sprite_rect().top());
-    return {ground.x(), top, ground.width(), ground.bottom() - top};
+    if (animation_frame() == 0)
+        return ground;
+    // Each frame includes transparent headroom above its stationary base.
+    return {ground.x(), ground.bottom() - 48, kTileSize, 48};
 }
 
 void Gate::submit_render_commands(std::vector<elysia::core::RenderCommand>& commands) const
 {
     if (is_destroyed() || !is_visible())
         return;
+
+    const int frame = animation_frame();
     elysia::core::RenderCommand command;
-    command.texture = _down_texture;
-    command.command_rect = GameObject::render_rect();
-    commands.push_back(command);
-
-    const auto raised = raised_sprite_rect();
-    if (raised.height() > 0)
+    command.texture = frame ? _up_texture : _down_texture;
+    command.command_rect = render_rect();
+    if (frame)
     {
-        command.texture = _up_texture;
-        command.command_rect = raised;
         command.use_src_rect = true;
-        command.src_rect = {0, 0, kTileSize, raised.height()};
-        commands.push_back(command);
+        command.src_rect = {frame * kTileSize, 0, kTileSize, 48};
     }
+    commands.push_back(command);
 }
-
 std::span<const elysia::physics::Collider> Gate::collider_definitions() const
 {
     return {&_collider, 1};

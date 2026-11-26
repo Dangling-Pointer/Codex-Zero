@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../engine/core/geometry/vector2.h"
+#include "engine/core/geometry/vector2.h"
 #include "game/gameflow/dungeon_graph_types.h"
 #include <cstdint>
 #include <optional>

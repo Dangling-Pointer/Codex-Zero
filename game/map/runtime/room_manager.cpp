@@ -1,6 +1,6 @@
-#include "room_query.h"
-#include "dungeon_room.h"
-#include "room_placement.h"
+#include "room_manager.h"
+#include "game/map/dungeon_room.h"
+#include "room_service.h"
 
 #include <algorithm>
 #include <cmath>
@@ -82,29 +82,49 @@ bool covered_by_corridors(const Rect& bounds, std::span<const RoomCorridorLayout
 }
 }
 
-RoomQuery::RoomQuery(const DungeonRoom& map, std::span<const RoomCorridorLayout> corridors,
-                     bool corridor_only) noexcept
-    : _map(map), _corridors(corridors), _corridor_only(corridor_only)
+RoomManager::~RoomManager() { clear(); }
+
+void RoomManager::bind_map(const DungeonRoom& map, std::span<const RoomCorridorLayout> corridors,
+                           bool corridor_only) noexcept
 {
+    clear();
+    _map = &map;
+    _corridors = corridors;
+    _corridor_only = corridor_only;
 }
 
-elysia::core::Rect RoomQuery::map_bounds() const noexcept
+bool RoomManager::activate() noexcept
 {
-    const auto tile = _map.tile_size();
-    return {_map.world_origin(), {_map.columns() * tile.x, _map.rows() * tile.y}};
+    return _map && !_map->is_destroyed() && RoomService::instance()->bind(*this);
 }
 
-std::optional<TileType> RoomQuery::tile_at(Vector2 position) const
+void RoomManager::clear() noexcept
 {
-    if (!finite(position) || !map_bounds().contains_half_open(position))
+    (void)RoomService::instance()->unbind(*this);
+    _map = nullptr;
+    _corridors = {};
+    _corridor_only = false;
+}
+
+std::optional<elysia::core::Rect> RoomManager::map_bounds() const noexcept
+{
+    if (!_map || _map->is_destroyed())
         return std::nullopt;
-    const auto local = position - _map.world_origin();
-    const auto tile = _map.tile_size();
-    return _map.tile_map().get(static_cast<int>(std::floor(local.x / tile.x)),
+    const auto tile = _map->tile_size();
+    return Rect{_map->world_origin(), {_map->columns() * tile.x, _map->rows() * tile.y}};
+}
+std::optional<TileType> RoomManager::tile_at(Vector2 position) const
+{
+    const auto bounds = map_bounds();
+    if (!finite(position) || !bounds || !bounds->contains_half_open(position))
+        return std::nullopt;
+    const auto local = position - _map->world_origin();
+    const auto tile = _map->tile_size();
+    return _map->tile_map().get(static_cast<int>(std::floor(local.x / tile.x)),
                                static_cast<int>(std::floor(local.y / tile.y))).type;
 }
 
-RoomLocation RoomQuery::region_at(Vector2 position) const
+RoomLocation RoomManager::region_at(Vector2 position) const
 {
     if (tile_at(position) != TileType::Floor)
         return {};
@@ -114,18 +134,20 @@ RoomLocation RoomQuery::region_at(Vector2 position) const
     return {_corridor_only ? RoomRegion::Corridor : RoomRegion::Room};
 }
 
-const RoomCorridorLayout* RoomQuery::corridor(RoomDirection direction) const noexcept
+const RoomCorridorLayout* RoomManager::corridor(RoomDirection direction) const noexcept
 {
+    if (!map_bounds())
+        return nullptr;
     const auto found = std::ranges::find(_corridors, direction, &RoomCorridorLayout::direction);
     return found == _corridors.end() ? nullptr : &*found;
 }
 
-bool RoomQuery::is_walkable(const Rect& bounds) const
+bool RoomManager::is_walkable(const Rect& bounds) const
 {
-    return terrain_is_walkable(_map, bounds);
+    return map_bounds().has_value() && terrain_is_walkable(*_map, bounds);
 }
 
-bool RoomQuery::can_place(const Rect& bounds, const PlacementOptions& options) const
+bool RoomManager::can_place(const Rect& bounds, const PlacementOptions& options) const
 {
     if (!is_walkable(bounds))
         return false;
@@ -151,19 +173,19 @@ bool RoomQuery::can_place(const Rect& bounds, const PlacementOptions& options) c
     });
 }
 
-std::optional<Vector2> RoomQuery::find_spawn(Vector2 size, Vector2 preferred_center,
+std::optional<Vector2> RoomManager::find_spawn(Vector2 size, Vector2 preferred_center,
                                             const PlacementOptions& options) const
 {
-    if (!finite(size) || size.x <= 0 || size.y <= 0 || !finite(preferred_center))
+    if (!map_bounds() || !finite(size) || size.x <= 0 || size.y <= 0 || !finite(preferred_center))
         return std::nullopt;
 
     double nearest = std::numeric_limits<double>::infinity();
     std::optional<Vector2> result;
-    const auto tile = _map.tile_size();
-    for (int y = 0; y < _map.rows(); ++y)
-        for (int x = 0; x < _map.columns(); ++x)
+    const auto tile = _map->tile_size();
+    for (int y = 0; y < _map->rows(); ++y)
+        for (int x = 0; x < _map->columns(); ++x)
         {
-            const auto at = _map.world_origin() + Vector2{x * tile.x, y * tile.y};
+            const auto at = _map->world_origin() + Vector2{x * tile.x, y * tile.y};
             const Rect bounds{at, size};
             if (!can_place(bounds, options))
                 continue;
@@ -180,9 +202,4 @@ std::optional<Vector2> RoomQuery::find_spawn(Vector2 size, Vector2 preferred_cen
     return result;
 }
 
-// Compatibility entry for collision-world callers, including transition validation.
-bool walkable_bounds(const elysia::physics::ITileCollisionWorld& map, const Rect& bounds)
-{
-    return terrain_is_walkable(map, bounds);
-}
 }

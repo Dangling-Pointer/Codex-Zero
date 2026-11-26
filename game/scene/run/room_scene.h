@@ -6,9 +6,9 @@
 #include "game/combat/projectile_manager.h"
 #include "room_scene_payload.h"
 #include "game/combat/wand/wand.h"
-#include "game/map/room_corridor_layout.h"
+#include "game/map/corridor/room_corridor_layout.h"
 #include "game/map/dungeon_room.h"
-#include "game/map/room_query.h"
+#include "game/map/runtime/room_manager.h"
 
 class PlayerCharacter;
 class Portal;
@@ -20,7 +20,7 @@ struct RoomBuildResult
 {
     DungeonRoom* map = nullptr;
     elysia::physics::ITileCollisionWorld* collision_world = nullptr;
-    elysia::core::Vector2 player_spawn;
+    std::optional<elysia::core::Vector2> preferred_player_spawn;
     std::vector<game::RoomCorridorLayout> corridors;
     bool corridor_only = false;
 };
@@ -45,7 +45,6 @@ protected:
     virtual RoomBuildResult build_room(const RoomBuildConfig& config) = 0;
 
     virtual void create_room_content() {}
-    [[nodiscard]] virtual bool should_create_portal() const noexcept { return true; }
     [[nodiscard]] virtual bool should_create_gates() const noexcept { return true; }
     [[nodiscard]] virtual bool can_leave_room() const { return true; }
 
@@ -53,10 +52,9 @@ protected:
     [[nodiscard]] const std::optional<CorridorTraversal>& corridor_traversal() const noexcept { return _corridor; }
 
     [[nodiscard]] const elysia::core::GameObject* room_map() const noexcept {return _room.map;}
-    [[nodiscard]] const game::RoomQuery& room_query() const noexcept { return *_room_query; }
+    [[nodiscard]] const game::RoomManager& room_manager() const noexcept { return _room_manager; }
 
     [[nodiscard]] PlayerCharacter* player() const noexcept { return _player; }
-    [[nodiscard]] Portal* portal() const noexcept { return _portal; }
     [[nodiscard]] const RoomBuildConfig& room_config() const noexcept { return _config; }
     [[nodiscard]] CombatSystem& combat_system() noexcept { return _combat; }
 
@@ -70,6 +68,7 @@ private:
     void build_room_objects(const CharacterContext& character);
     void clear_room() noexcept;
     void leave_through_portal();
+    void open_floor_map();
     [[nodiscard]] bool try_leave_through_boundary();
     void update_minimap();
     void create_corridor_gates();
@@ -87,7 +86,7 @@ private:
     std::vector<Gate*> _gates; // Scene-owned observers, like the player and portal.
 
     RoomBuildResult _room;
-    std::optional<game::RoomQuery> _room_query;
+    game::RoomManager _room_manager;
     RoomBuildConfig _config;
 
     bool _active = false;

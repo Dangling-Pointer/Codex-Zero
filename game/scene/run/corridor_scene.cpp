@@ -1,7 +1,6 @@
 #include "corridor_scene.h"
 
 #include "game/map/dungeon_room.h"
-#include "game/map/room_placement.h"
 #include "game/scene/scene_keys.h"
 #include "game/characters/player_character.h"
 
@@ -19,14 +18,15 @@ RoomBuildResult CorridorScene::build_room(const RoomBuildConfig& config)
         const auto layout = game::make_corridor_layout(
             GameFlowManager::instance()->current_floor(), *corridor_traversal());
         auto exits = layout.world_exits(map->world_origin(), map->tile_size());
-        return {map, map, game::find_room_spawn(*map, game::kPlayerSpawnSize, exits.front().seam_center(), {}),
-                std::move(exits), true};
+        return {.map = map, .collision_world = map,
+                .preferred_player_spawn = exits.front().seam_center(),
+                .corridors = std::move(exits), .corridor_only = true};
     }
     const auto preferred = map->position()
         + elysia::core::Vector2{700, map->size().y * 0.5f};
-    const auto spawn = game::find_room_spawn(*map, game::kPlayerSpawnSize, preferred, {});
 
-    return {map, map, spawn, {}, true};
+    return {.map = map, .collision_world = map,
+            .preferred_player_spawn = preferred, .corridor_only = true};
 }
 
 elysia::scene::SceneRoute make_corridor_test_route(const CharacterContext& character)

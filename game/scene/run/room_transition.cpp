@@ -3,7 +3,7 @@
 #include "engine/scene/runtime/scene_camera_runtime.h"
 #include "game/characters/player_character.h"
 #include "game/gameflow/game_flow_manager.h"
-#include "game/map/room_placement.h"
+#include "game/map/runtime/room_manager.h"
 
 #include <algorithm>
 #include <stdexcept>
@@ -56,7 +56,7 @@ std::optional<elysia::scene::SceneRoute> find_corridor_exit_route(
 
 void restore_boundary_entry(const RoomBoundaryEntry& entry,
                             std::span<const RoomCorridorLayout> corridors,
-                            const elysia::physics::ITileCollisionWorld& world,
+                            const RoomManager& manager,
                             PlayerCharacter& player)
 {
     const auto entrance = std::ranges::find(corridors, entry.direction, &RoomCorridorLayout::direction);
@@ -78,7 +78,7 @@ void restore_boundary_entry(const RoomBoundaryEntry& entry,
     constexpr float slop = 0.1f;
     const elysia::core::Rect interior{body.position() + elysia::core::Vector2{slop, slop},
                                      body.size() - elysia::core::Vector2{slop * 2, slop * 2}};
-    if (!walkable_bounds(world, interior))
+    if (!manager.is_walkable(interior))
         throw std::invalid_argument("Boundary entry collision body is outside walkable ground");
     if (!player.physics_world()->teleport_object(player.physics_handle(), position))
         throw std::runtime_error("Cannot place the player at the corridor entrance");

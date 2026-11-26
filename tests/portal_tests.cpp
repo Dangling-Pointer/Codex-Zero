@@ -1,7 +1,7 @@
 #include "scene_harness.h"
 #include "game/objcets/portal.h"
 #include "game/map/dungeon_room.h"
-#include "game/map/room_placement.h"
+#include "room_test_helpers.h"
 #include "game/characters/character_manager.h"
 #include "game/characters/player_character.h"
 #include "game/characters/enemy.h"
@@ -26,7 +26,8 @@
 void fixed_room_corridor_tests();
 void floor_minimap_tests();
 void gate_tests();
-void room_query_tests();
+void room_runtime_tests();
+void room_flow_tests();
 
 namespace
 {
@@ -93,26 +94,20 @@ void placement()
     config.numSubRooms = 0;
     DungeonRoom map(config, {12, 12});
     map.set_position({128, -64});
-    const auto portal = game::central_portal_bounds(map);
-    check(portal.center() == map.center() && portal.size() == game::kPortalSize,
-          "central portal respects map origin");
-    check(game::walkable_bounds(map, portal), "central portal on floor");
-    const auto spawn = game::player_spawn_near_portal(map);
-    check(spawn == map.position() + Vector2{160, 128}, "equal distances resolve by row then column");
-    const Rect player{spawn, game::kPlayerSpawnSize};
-    check(game::walkable_bounds(map, player) && !portal.intersects(player), "separate full player bounds");
-    check(!game::walkable_bounds(map, {map.position(), {32, 32}}), "void is not floor");
-    check(!game::walkable_bounds(map, {map.position() - Vector2{1, 0}, {32, 32}}), "outside map rejected");
-    check(!game::walkable_bounds(map, {map.position() + Vector2{48, 48}, {32, 32}}),
+    game::RoomManager manager;
+    manager.bind_map(map);
+    const auto portal = Rect::from_center(map.center(), {62, 62});
+    check(manager.is_walkable(portal), "central exit area lies on walkable terrain");
+    const auto spawn = manager.find_spawn({32, 32}, portal.center(), {.occupied = {&portal, 1}});
+    check(spawn && *spawn == map.position() + Vector2{160, 128}, "equal distances resolve by row then column");
+    check(!manager.is_walkable({map.position(), {32, 32}}), "void is not floor");
+    check(!manager.is_walkable({map.position() - Vector2{1, 0}, {32, 32}}), "outside map rejected");
+    check(!manager.is_walkable({map.position() + Vector2{48, 48}, {32, 32}}),
           "full rectangle crossing wall rejected");
-    rejects([&] { (void)game::find_room_spawn(map, {10000, 10000}, map.center(), {}); },
-            "no complete walkable spawn rejected");
+    check(!manager.find_spawn({10000, 10000}, map.center()), "no complete walkable spawn returns empty");
     const Rect occupied = map.world_rect();
-    rejects([&] { (void)game::find_room_spawn(map, {32, 32}, map.center(), {&occupied, 1}); },
-            "fully occupied room rejected");
-    config.baseRoomSize = {2, 2};
-    DungeonRoom blocked(config, {12, 12});
-    rejects([&] { (void)game::player_spawn_near_portal(blocked); }, "blocked center rejected");
+    check(!manager.find_spawn({32, 32}, map.center(), {.occupied = {&occupied, 1}}),
+          "fully occupied room returns empty");
 }
 
 void click(elysia::scene::SceneManager& manager, int x, int y)
@@ -728,6 +723,17 @@ void choose_map_room(elysia::scene::SceneManager& manager, RoomID id, bool enabl
     throw std::runtime_error("Expected room button is missing from the map");
 }
 
+void open_map(elysia::scene::SceneManager& manager)
+{
+    using namespace elysia::input;
+    RawInputEvent event;
+    event.type = RawInputEventType::ControlPressed;
+    event.control = RawInputControl::KeyM;
+    event.source = InputSourceId::keyboard();
+    event.device = InputDevice::Keyboard;
+    manager.on_input(InputSnapshot{.sources = {{.source = event.source}}, .events = {event}});
+    manager.on_update(0);
+}
 void enter_portal(elysia::scene::SceneManager& manager)
 {
     const auto* query = ELYSIA_OBJECT_QUERY;
@@ -804,8 +810,8 @@ void single_floor_run()
         auto* player = query->find_object<PlayerCharacter>();
         check(player && player->health() == initial_character.health && !flow.find_room(0)->cleared,
               "each new run creates fresh player and room state");
-        enter_portal(manager);
-        check(manager.current_scene_key() == FloorMap, "start portal opens the generated map");
+        open_map(manager);
+        check(manager.current_scene_key() == FloorMap, "M opens the generated map");
         choose_map_room(manager, 0, false);
         choose_map_room(manager, 1, false);
         check(manager.current_scene_key() == FloorMap && flow.get_current_room_id() == 0,
@@ -829,7 +835,7 @@ void single_floor_run()
     manager.on_scene_request({elysia::scene::SceneRequestType::Switch,
                              make_run_room_route(flow.get_current_room_id(), initial_character)});
     manager.on_update(0);
-    enter_portal(manager);
+    open_map(manager);
     const auto& floor = flow.current_floor();
     const RoomID first_event = 2;
     choose_map_room(manager, first_event);
@@ -840,17 +846,17 @@ void single_floor_run()
     auto* player = query->find_object<PlayerCharacter>();
     player->receive_attack({0, 0, 10});
     const float health = player->health();
-    enter_portal(manager);
+    open_map(manager);
     choose_map_room(manager, 0);
     check(query->find_object<PlayerCharacter>()->health() == health, "player state survives return to start");
-    enter_portal(manager);
+    open_map(manager);
     choose_map_room(manager, first_event);
     check(terrain_layout(*query->find_object<DungeonRoom>()) == layout,
           "event revisit preserves corridor terrain");
     check(query->find_object<PlayerCharacter>()->health() == health, "player state survives event revisit");
-    enter_portal(manager);
+    open_map(manager);
     choose_map_room(manager, 0);
-    enter_portal(manager);
+    open_map(manager);
 
     for (RoomID id : path_to_exit(floor))
     {
@@ -858,7 +864,8 @@ void single_floor_run()
         check(flow.get_current_room_id() == id && query->find_object<PlayerCharacter>()->health() == health,
               "generated route commits movement and retains player state");
         check(manager.current_scene_key() == FixedRoom, "generated Event and End rooms route to fixed rooms");
-        enter_portal(manager);
+        if (flow.get_current_room_type() == RoomType::End) enter_portal(manager);
+        else open_map(manager);
     }
     check(manager.current_scene_key() == MainMenu, "generated exit portal returns to the main menu");
     flow.restart(43);
@@ -917,7 +924,7 @@ void corridor_movement_and_lifecycle()
         check(player->physics_world() != nullptr, "corridor player is bound to physics");
         auto& world = *player->physics_world();
         check(map->columns() == payload->room.grid_size.x && map->rows() == payload->room.grid_size.y, "corridor uses the configured standalone layout");
-        check(game::walkable_bounds(*map, player->world_rect()), "corridor player spawns on floor");
+        check(test::walkable(*map, player->world_rect()), "corridor player spawns on floor");
         check(std::abs(player->center().y - map->center().y) < 0.01f
             && player->center().x < map->center().x,
             "corridor spawn is centered vertically on the left side");
@@ -1014,75 +1021,31 @@ void corridor_menu_entry()
     }
 }
 
-template<class T> void room_portal(const elysia::scene::ScenePayload& payload = {})
+void ordinary_combat_room()
 {
-    test::SceneHarness<T> host(payload);
-    auto& scene = host.scene();
+    const RoomScenePayload payload{*CharacterManager::instance()->create_context("default_player"), {}};
+    test::SceneHarness<CombatScene> host(payload);
     for (int visit = 0; visit < 3; ++visit)
     {
         if (visit)
             host.enter(payload, visit == 1 ? elysia::scene::SceneReloadMode::Reuse
                                           : elysia::scene::SceneReloadMode::Reset);
-        auto portals = objects<Portal>(scene);
-        auto players = objects<PlayerCharacter>(scene);
-        auto maps = objects<DungeonRoom>(scene);
-        check(portals.size() == 1 && players.size() == 1 && maps.size() == 1, "one portal per room visit");
-        auto* portal = portals.front();
-        auto* player = players.front();
-        auto* map = maps.front();
-        const auto initial_player = player->world_rect();
-        check(portal->center() == map->center() && portal->size() == game::kPortalSize, "portal at map center");
-        check(game::walkable_bounds(*map, initial_player)
-            && !portal->world_rect().intersects(initial_player), "safe player spawn");
-        for (auto* enemy : objects<Enemy>(scene))
-            check(game::walkable_bounds(*map, enemy->world_rect())
-                && !enemy->world_rect().intersects(initial_player)
-                && !enemy->world_rect().intersects(portal->world_rect()), "enemies avoid player and portal");
-        int reached = 0;
-        portal->set_on_reached([&] { ++reached; });
-        host.update(0);
-        check(reached == 0, "spawn cannot trigger portal");
-        player->set_position(portal->position());
-        scene.pause();
-        host.update(0);
-        check(reached == 0, "paused room does not trigger");
-        scene.resume();
-        player->set_active(false);
-        host.update(0);
-        check(reached == 0, "inactive player does not trigger");
-        player->set_active(true);
-        portal->set_active(false);
-        host.update(0);
-        check(reached == 0, "inactive portal does not trigger in room");
-        portal->set_active(true);
-        host.update(0);
-        host.update(0);
-        check(reached == 1 && portal->is_reached(), "room dispatches once");
-        portal->reset();
-        player->receive_attack({0, 0, player->max_health()});
-        host.update(0);
-        check(reached == 1 && !portal->is_reached(), "dead player does not trigger");
-        if (visit == 1)
-        {
-            player->destroy();
-            host.update(0);
-            host.update(0);
-            check(objects<PlayerCharacter>(scene).empty(), "player removal is safe");
-        }
-        if (visit != 0)
-        {
-            portal->destroy();
-            host.update(0);
-            host.update(0);
-            check(objects<Portal>(scene).empty() && reached == 1, "portal removal clears observer");
-        }
+        auto& scene = host.scene();
+        check(objects<Portal>(scene).empty(), "ordinary combat room has no portal");
+        const auto players = objects<PlayerCharacter>(scene);
+        check(players.size() == 1 && objects<DungeonRoom>(scene).size() == 1,
+              "combat entry creates one map and player");
+        const auto enemies = objects<Enemy>(scene);
+        check(!enemies.empty(), "combat room creates enemies without a portal");
+        for (const auto* enemy : enemies)
+            check(!enemy->world_rect().intersects(players.front()->world_rect()),
+                  "enemy placement avoids player");
         host.leave();
-        check(objects<Portal>(scene).empty() && objects<PlayerCharacter>(scene).empty() && reached == 1,
-              "exit clears room objects without invoking callback");
+        check(objects<PlayerCharacter>(scene).empty() && objects<Enemy>(scene).empty(),
+              "combat exit clears scene content");
     }
 }
 }
-
 int main()
 {
     try
@@ -1090,11 +1053,11 @@ int main()
         portal_trigger();
         gate_tests();
         placement();
-        room_query_tests();
+        room_runtime_tests();
+        room_flow_tests();
         fixed_room_corridor_tests();
         floor_minimap_tests();
-        room_portal<CombatScene>(RoomScenePayload{
-            *CharacterManager::instance()->create_context("default_player"), {}});
+        ordinary_combat_room();
         generated_floor_tree();
         generated_run_state();
         fixed_floor_topology();

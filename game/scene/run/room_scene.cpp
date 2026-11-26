@@ -7,8 +7,6 @@
 #include "game/combat/projectile_service.h"
 #include "game/combat/projectiles/bullet.h"
 #include "game/gameflow/game_flow_manager.h"
-#include "game/map/room_placement.h"
-#include "game/map/room_service.h"
 #include "game/objcets/portal.h"
 #include "game/objcets/gate.h"
 #include "game/scene/gameplay_setup.h"
@@ -21,6 +19,9 @@
 
 namespace
 {
+constexpr elysia::core::Vector2 kPortalSize{62, 62};
+constexpr elysia::core::Vector2 kPlayerSpawnSize{32, 32};
+
 bool positive_dimensions(elysia::core::Vector2 size)
 {
     return std::isfinite(size.x) && std::isfinite(size.y) && size.x >= 1 && size.y >= 1;
@@ -76,7 +77,7 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
         build_room_objects(incoming->character);
         if (incoming->boundary_entry)
             game::restore_boundary_entry(*incoming->boundary_entry, _room.corridors,
-                                         *_room.collision_world, *_player);
+                                         _room_manager, *_player);
         create_room_content();
         if (should_create_gates())
             create_corridor_gates();
@@ -94,8 +95,8 @@ void RoomScene::on_enter(const elysia::scene::ScenePayload& payload)
         }
 
         _previous_player_center = _player->center();
-        if (!game::RoomService::instance()->bind(*_room_query))
-            throw std::runtime_error("Cannot bind room query service");
+        if (!_room_manager.activate())
+            throw std::runtime_error("Cannot activate room runtime service");
         _active = true;
     }
     catch (...)
@@ -118,32 +119,35 @@ void RoomScene::build_room_objects(const CharacterContext& character)
     if (!_room.collision_world)
         throw std::runtime_error("Room build did not provide a tile collision world");
 
-    _room_query.emplace(*_room.map, _room.corridors, _room.corridor_only);
+    _room_manager.bind_map(*_room.map, _room.corridors, _room.corridor_only);
 
-    const auto spawn = _room.player_spawn;
-    if (!std::isfinite(spawn.x) || !std::isfinite(spawn.y))
+    const auto preferred = _room.preferred_player_spawn.value_or(_room.map->center());
+    if (!std::isfinite(preferred.x) || !std::isfinite(preferred.y))
         throw std::runtime_error("Room player spawn has non-finite coordinates");
 
-    const auto& collision_world = *_room.collision_world;
-    if (!physics_world().set_tile_world(collision_world))
+    if (!physics_world().set_tile_world(*_room.collision_world))
         throw std::runtime_error("Cannot bind room tile collision world");
 
-    const elysia::core::Rect player_bounds{spawn, game::kPlayerSpawnSize};
-    if (!room_query().is_walkable(player_bounds))
-        throw std::runtime_error("Room player spawn must be on walkable ground");
-
-    if (should_create_portal())
+    std::vector<elysia::core::Rect> occupied;
+    const auto* room = run_room();
+    if (room && room->type == RoomType::End)
     {
-        const auto portal_bounds = game::central_portal_bounds(*_room.map);
-        if (!room_query().is_walkable(portal_bounds))
+        const auto portal_bounds = elysia::core::Rect::from_center(_room.map->center(), kPortalSize);
+        if (!room_manager().is_walkable(portal_bounds))
             throw std::runtime_error("Room portal must be on walkable ground");
-        if (portal_bounds.intersects(player_bounds))
-            throw std::runtime_error("Room player spawn overlaps the portal");
-
         _portal = create_and_add_object<Portal>(portal_bounds);
         _portal->set_on_reached([this] { leave_through_portal(); });
+        occupied.push_back(portal_bounds);
     }
 
+    const game::PlacementOptions placement{
+        .region = _room.corridor_only ? game::SpawnRegion::Corridor : game::SpawnRegion::Room,
+        .occupied = occupied,
+    };
+    const auto position = room_manager().find_spawn(kPlayerSpawnSize, preferred, placement);
+    if (!position)
+        throw std::runtime_error("Room has no free walkable player spawn area");
+    const auto spawn = *position;
     _player = create_and_add_object<PlayerCharacter>(spawn, character);
     if (!_player || _player->is_destroyed())
         throw std::runtime_error("Cannot create room player");
@@ -153,11 +157,7 @@ void RoomScene::build_room_objects(const CharacterContext& character)
 
 void RoomScene::clear_room() noexcept
 {
-    if (_room_query)
-    {
-        (void)game::RoomService::instance()->unbind(*_room_query);
-        _room_query.reset();
-    }
+    _room_manager.clear();
     _active = false;
     _transition_requested = false;
     _start_gate_delay = 0;
@@ -248,7 +248,8 @@ void RoomScene::on_after_update(double)
 
 void RoomScene::update_minimap()
 {
-    if (!_minimap || _minimap->is_destroyed() || !_player || _player->is_destroyed())
+    if (!_room.map || _room.map->is_destroyed() || !_room.collision_world
+        || !_minimap || _minimap->is_destroyed() || !_player || _player->is_destroyed())
         return;
     if (_room_id)
         _minimap->set_player_location(*_room_id, _player->render_rect().center(), _room.corridors);
@@ -284,26 +285,28 @@ const Room* RoomScene::run_room() const
 void RoomScene::leave_through_portal()
 {
     const auto* room = run_room();
-    if (!room)
+    if (!_transition_requested && room && room->type == RoomType::End)
     {
-        ELYSIA_LOG_INFO("gameplay", "Room portal reached");
-        return;
-    }
-    if (room->type == RoomType::End)
-    {
+        _transition_requested = true;
         request_scene_switch(MainMenu);
-        return;
     }
-
-    const auto character = capture_character_context();
-    if (!character)
-        throw std::logic_error("Cannot leave a dungeon room without a player");
-
-    request_scene_switch(FloorMap, FloorMapPayload{room->id, *character});
-    if (room->type == RoomType::Combat || room->type == RoomType::Elite)
-        GameFlowManager::instance()->mark_current_room_cleared();
 }
 
+void RoomScene::open_floor_map()
+{
+    if (!_active || is_paused() || _transition_requested || !_room.map || _room.map->is_destroyed()
+        || !_player || _player->is_destroyed() || !_player->is_active() || _player->is_dead())
+        return;
+    const auto* room = run_room();
+    const auto& flow = *GameFlowManager::instance();
+    if (!room || flow.get_current_room_id() != room->id || !can_leave_room())
+        return;
+    const auto character = capture_character_context();
+    if (!character)
+        return;
+    _transition_requested = true;
+    request_scene_switch(FloorMap, FloorMapPayload{room->id, *character});
+}
 std::optional<CharacterContext> RoomScene::capture_character_context() const
 {
     if (!_player || _player->is_destroyed())
@@ -358,6 +361,7 @@ void RoomScene::on_control_target_removing(elysia::core::SceneObject& object)
         std::erase(_gates, gate);
     if (&object == _room.map)
     {
+        _room_manager.clear();
         if (_room.collision_world)
             (void)physics_world().clear_tile_world(*_room.collision_world);
         _room = {};
@@ -367,18 +371,26 @@ void RoomScene::on_control_target_removing(elysia::core::SceneObject& object)
 void RoomScene::on_shortcuts(const elysia::input::RawInputFrame&,
     const std::vector<elysia::input::RawInputEvent>& events)
 {
+    using namespace elysia::input;
     for (const auto& event : events)
     {
-        if (event.type != elysia::input::RawInputEventType::ControlPressed
-            || event.control != elysia::input::RawInputControl::KeyEscape)
+        if (event.type != RawInputEventType::ControlPressed)
             continue;
-
-        consume_input(event);
-        request_scene_switch(MainMenu);
-        return;
+        if (event.control == RawInputControl::KeyM)
+        {
+            consume_input(event);
+            open_floor_map();
+            return;
+        }
+        if (event.control == RawInputControl::KeyEscape && !_transition_requested)
+        {
+            consume_input(event);
+            _transition_requested = true;
+            request_scene_switch(MainMenu);
+            return;
+        }
     }
 }
-
 void RoomScene::on_game_fixed_update(std::uint64_t, double)
 {
     if (_player && !is_paused())

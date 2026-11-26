@@ -1,13 +1,13 @@
 #pragma once
 
 #include "room_scene_payload.h"
-#include "game/map/room_corridor_layout.h"
+#include "game/map/corridor/room_corridor_layout.h"
 
 #include <span>
 
 class PlayerCharacter;
 namespace elysia::camera { class Camera; }
-namespace elysia::physics { class ITileCollisionWorld; }
+namespace game { class RoomManager; }
 namespace elysia::scene { class SceneCameraRuntime; }
 
 namespace game
@@ -26,7 +26,7 @@ namespace game
 // Called after the destination player has been registered with its physics world.
 void restore_boundary_entry(const RoomBoundaryEntry& entry,
                             std::span<const RoomCorridorLayout> corridors,
-                            const elysia::physics::ITileCollisionWorld& world,
+                            const RoomManager& manager,
                             PlayerCharacter& player);
 
 void initialize_room_camera(elysia::scene::SceneCameraRuntime& camera,

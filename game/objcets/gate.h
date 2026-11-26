@@ -20,13 +20,13 @@ public:
     void update(double delta) override;
     void reset() noexcept override;
 
-    // world_rect() stays one ground tile; the raised sprite extends one tile upward.
+    // world_rect() stays one ground tile; the raised sprite extends half a tile upward.
     [[nodiscard]] elysia::core::Rect render_rect() const noexcept override;
     void submit_render_commands(std::vector<elysia::core::RenderCommand>& commands) const override;
     [[nodiscard]] std::span<const elysia::physics::Collider> collider_definitions() const override;
 
 private:
-    [[nodiscard]] elysia::core::Rect raised_sprite_rect() const noexcept;
+    [[nodiscard]] int animation_frame() const noexcept;
 
     double _raise_progress = 0;
     elysia::physics::Collider _collider;
