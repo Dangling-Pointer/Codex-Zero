@@ -1,7 +1,7 @@
 #include "scene_harness.h"
 #include "game/map/dungeon_room.h"
 #include "game/map/runtime/room_manager.h"
-#include "game/map/runtime/room_service.h"
+#include "game/map/room_service.h"
 #include "game/characters/character_manager.h"
 #include "game/characters/player_character.h"
 #include "game/scene/game_scene.h"

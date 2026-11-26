@@ -1,5 +1,5 @@
 #include "scene_harness.h"
-#include "game/map/runtime/room_service.h"
+#include "game/map/room_service.h"
 #include "room_test_helpers.h"
 #include "game/scene/run/fixed_room_scene.h"
 #include "game/scene/run/corridor_scene.h"

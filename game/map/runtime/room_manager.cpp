@@ -1,6 +1,6 @@
 #include "room_manager.h"
 #include "game/map/dungeon_room.h"
-#include "room_service.h"
+#include "game/map/room_service.h"
 
 #include <algorithm>
 #include <cmath>
